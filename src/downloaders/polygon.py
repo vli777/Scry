@@ -16,9 +16,9 @@ API_KEY = api_token
 BASE_URL = "https://api.polygon.io/v2/aggs/ticker"
 TICKER = "NVDA"
 MULTIPLIER = 5  # 5-minute bars
-TIMESPAN = "minute"
-START_DATE = datetime(2023, 1, 10)  # Original start date
-END_DATE = datetime(2025, 1, 10)  # Final end date
+TIMESPAN = "minute"   
+END_DATE = datetime.today().date()   
+START_DATE = END_DATE - timedelta(days=2*365) # 2 Years back
 CHUNK_DAYS = 90  # 3-month chunks
 RATE_LIMIT_CALLS = 5  # Max calls per minute
 RATE_LIMIT_SLEEP = 60  # Seconds to sleep after RATE_LIMIT_CALLS
