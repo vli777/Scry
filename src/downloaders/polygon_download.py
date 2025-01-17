@@ -5,10 +5,10 @@ import os
 import time
 
 
-api_token = os.environ.get("API_TOKEN")
+api_token = os.environ.get("POLYGON_API_TOKEN")
 
 if api_token is None:
-    raise ValueError("API_TOKEN environment variable not set")
+    raise ValueError("POLYGON_API_TOKEN environment variable not set")
 
 API_KEY = api_token
 BASE_URL = "https://api.polygon.io/v2/aggs/ticker"
