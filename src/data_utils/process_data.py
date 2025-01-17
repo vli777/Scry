@@ -4,9 +4,13 @@ import numpy as np
 import pandas_ta as ta
 from sklearn.preprocessing import StandardScaler
 import joblib
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from src.config_loader import config
 
 from compute_features import compute_indicators
-from config_loader import config
+
 
 stoch_intervals = [5, 10, 15, 20, 25, 30]
 ma_periods = [20, 50, 60, 120, 200, 300]

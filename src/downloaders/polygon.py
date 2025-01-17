@@ -4,8 +4,10 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 import time
+import sys
 
-from config_loader import config
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from src.config_loader import config
 
 load_dotenv()
 

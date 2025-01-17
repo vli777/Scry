@@ -3,8 +3,10 @@ from dotenv import load_dotenv
 import requests
 import pandas as pd
 from datetime import datetime, timedelta, timezone
+import sys
 
-from config_loader import config
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from src.config_loader import config
 
 load_dotenv()
 
