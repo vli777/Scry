@@ -11,7 +11,7 @@ if API_TOKEN is None:
     raise ValueError("SCHWAB_BEARER_TOKEN environment variable not set")
 
 BASE_URL = "https://api.schwabapi.com/marketdata/v1/pricehistory"
-SYMBOL = "SPY"
+SYMBOL = "VST"
 START_DATE = datetime.now(timezone.utc) - timedelta(days=10)
 FREQUENCY_TYPE = "minute"
 FREQUENCY = 5
@@ -111,8 +111,15 @@ def _fetch_chunked_schwab(
     """
     all_candles = []
     current_start = start_date
+    previous_start = None  # Track previous start to detect stalling
 
     while current_start < end_date:
+        # Break if current_start hasn't moved since last iteration
+        if current_start == previous_start:
+            print("No progress in fetching; breaking loop.")
+            break
+        previous_start = current_start
+
         current_end = min(current_start + timedelta(days=max_chunk_days), end_date)
         print(
             f"Fetching data from {current_start.isoformat()} to {current_end.isoformat()}..."
@@ -161,28 +168,7 @@ def get_last_saved_timestamp(filename):
     return ts
 
 
-def fill_missing_gaps(df, freq_minutes=5):
-    # Ensure 'timestamp' is a UTC-aware datetime and set it as the DataFrame index
-    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
-    df = df.sort_values("timestamp").set_index("timestamp")
-
-    # Create a complete date range from the minimum to maximum timestamp at the expected frequency
-    full_range = pd.date_range(
-        start=df.index.min(),
-        end=df.index.max(),
-        freq=pd.Timedelta(minutes=freq_minutes),
-        tz="UTC",
-    )
-
-    # Reindex the DataFrame to the full range, inserting NaN for missing timestamps
-    df = df.reindex(full_range)
-    df.index.name = "timestamp"
-    df.reset_index(inplace=True)
-
-    return df
-
-
-def save_to_parquet(candles, filename, freq_minutes=5):
+def save_to_parquet(candles, filename):
     if not candles:
         print("No data to save.")
         return
@@ -208,9 +194,6 @@ def save_to_parquet(candles, filename, freq_minutes=5):
     # Remove duplicates based on timestamp
     df.drop_duplicates(subset=["timestamp"], inplace=True)
 
-    # Fill gaps by inserting missing timestamps
-    df = fill_missing_gaps(df, freq_minutes=freq_minutes)
-
     # Save the complete DataFrame to Parquet
     df.to_parquet(filename, engine="pyarrow", compression="snappy", index=False)
     print(f"Data saved to {filename}.")
@@ -227,13 +210,18 @@ def main():
         start = START_DATE
         print(f"Starting from the default start date: {start}...")
 
+    now = datetime.now(timezone.utc)
+    # Assume market closes at 21:00 UTC (adjust as needed for your symbol/timezone)
+    market_close_time = now.replace(hour=21, minute=0, second=0, microsecond=0)
+    effective_end_date = min(now, market_close_time)
+
     chunked_candles = fetch_data_schwab(
         symbol=SYMBOL,
         bearer_token=API_TOKEN,
         frequency_type=FREQUENCY_TYPE,
         frequency=FREQUENCY,
         start_date=start,
-        end_date=datetime.now(timezone.utc),
+        end_date=effective_end_date,
         max_chunk_days=10,  # chunk by api limit of 10 days
     )
     save_to_parquet(chunked_candles, file_path)
