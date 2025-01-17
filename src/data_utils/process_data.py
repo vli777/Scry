@@ -1,10 +1,11 @@
+import os
 import pandas as pd
 import numpy as np
 import pandas_ta as ta
 from sklearn.preprocessing import StandardScaler
 import joblib
 
-from data_utils.compute_features import compute_indicators
+from compute_features import compute_indicators
 
 stoch_intervals = [5, 10, 15, 20, 25, 30]
 ma_periods = [20, 50, 60, 120, 200, 300]
@@ -73,13 +74,25 @@ def prepare_features(df, scaler_path=None, fit_scaler=False):
 
 
 if __name__ == "__main__":
-    # Load the dataset
-    FILE_PATH = "data/raw/SPY_5min_data.parquet"
-    SCALER_PATH = "data/processed/scaler.pkl"
-    PROCESSED_FILE_PATH = "data/processed/SPY_5min_processed.parquet"
+    SYMBOL = "SPY"
+    FILE_PATH = f"data/raw/{SYMBOL}_5min_data.parquet"
+    SCALER_PATH = f"data/processed/scaler_{SYMBOL}.pkl"
+    PROCESSED_FILE_PATH = f"data/processed/{SYMBOL}_5min_processed.parquet"
 
-    df = pd.read_parquet(FILE_PATH)
-    df = prepare_features(df, scaler_path=SCALER_PATH)
-    df.to_parquet(
-        PROCESSED_FILE_PATH, engine="pyarrow", compression="snappy", index=False
-    )
+    # Check if processed file already exists
+    if os.path.exists(PROCESSED_FILE_PATH):
+        print(
+            f"Processed file {PROCESSED_FILE_PATH} already exists. Skipping processing."
+        )
+    else:
+        df = pd.read_parquet(FILE_PATH)
+        df, scaler = prepare_features(df, scaler_path=SCALER_PATH, fit_scaler=False)
+        df.to_parquet(
+            PROCESSED_FILE_PATH, engine="pyarrow", compression="snappy", index=False
+        )
+        print(f"Processing complete. File saved to {PROCESSED_FILE_PATH}")
+
+    # Check loaded data regardless
+    df = pd.read_parquet(PROCESSED_FILE_PATH)
+    print(f"Total rows loaded: {len(df)}")
+    print(df.tail())
