@@ -1,11 +1,5 @@
 # Scry
-A time-series forecasting pipeline using a Temporal Fusion Transformer (TFT) to predict the next 1 hour of price movement on 5-minute interval data. This project demonstrates:
-
-- Data fetching & incremental updates
-- Feature engineering (technical indicators)
-- Training a TFT model
-- Batch predictions
-- Real-time inference via FastAPI
+A time-series forecasting pipeline using a Temporal Fusion Transformer (TFT) to predict the next 1 hour of stock price movement
 
 ## Table of Contents
 - Installation
