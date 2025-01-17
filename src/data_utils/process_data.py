@@ -59,7 +59,9 @@ def prepare_features(df, scaler_path=None, fit_scaler=False):
         print(f"Warning: missing columns: {missing_columns}")
 
     # Fit or load scaler
-    if fit_scaler:
+    if fit_scaler or not (scaler_path and os.path.exists(scaler_path)):
+    # If we need to fit a scaler either because fit_scaler is True 
+    # or the scaler file doesn't exist, then do so.
         scaler = StandardScaler()
         scaler.fit(df[continuous_columns])
         if scaler_path:
