@@ -42,7 +42,7 @@ Create a file named .env in the project root (added to .gitignore so it’s not 
 
 ```
 
-DATA_PATH=data/processed/spy_features.parquet
+DATA_PATH=data/processed/features.parquet
 MODEL_PATH=models/tft_model.pth
 SCHWAB_BEARER_TOKEN=YourSecretToken
 ```
@@ -56,7 +56,7 @@ Additional paths or tokens can be added as needed.
 
 ## Data Requirements:
 
-The project expects 5-minute interval data in a Parquet file, e.g. data/processed/spy_features.parquet.
+The project expects 5-minute interval data in a Parquet file, e.g. data/processed/features.parquet.
 The DataFrame columns might include: timestamp, open, high, low, close, volume, ....
 
 ## Usage
@@ -70,27 +70,27 @@ Train the TFT model:
 ```
 
 ```
-python main.py train --data-path data/processed/spy_features.parquet --model-path models/tft_model.pth
+python main.py train --data-path data/processed/features.parquet --model-path models/tft_model.pth
 ```
 Trains a multi-step TFT model (e.g., 12-step horizon for 1 hour of 5-min bars).
 
 ## Batch Predict:
 
 ```
-python main.py batch_predict --data-path data/processed/spy_features.parquet --model-path models/tft_model.pth
+python main.py batch_predict --data-path data/processed/features.parquet --model-path models/tft_model.pth
 ```
 Loads the saved TFT model and performs a batch prediction (using predict_close_price_tft under the hood).
 Fetch Data (Incremental Update):
 
 ```
-python main.py fetch_data --data-path data/processed/spy_features.parquet
+python main.py fetch_data --data-path data/processed/features.parquet
 ```
 Fetches new 5-minute data from the last timestamp to now, updates rolling features, and saves the updated Parquet.
 Arguments (example):
 
 --data-path: path to your processed parquet file.
 --model-path: path to your TFT model checkpoint.
---ticker: symbol like SPY (default).
+--ticker: symbol
 --interval: e.g. 5min.
 (These arguments can be extended or customized as needed.)
 
@@ -110,7 +110,7 @@ Example request:
 ```
 curl -X POST http://localhost:8000/predict \
      -H "Content-Type: application/json" \
-     -d '{"symbol": "SPY"}'
+     -d '{"symbol": "NVDA"}'
 ```
 The server calls predict_close_price_tft internally, loads the latest dataset, and returns the predicted close price.
 You might want to schedule or run incremental updates separately (via main.py fetch_data) so the data is always fresh.
