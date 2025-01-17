@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 import os
 import pandas as pd
 
-from inference import calculate_features_incrementally, fetch_current_data
+from inference.lgbm_predict import calculate_features_incrementally, fetch_current_data
 
 # Load environment variables
 load_dotenv()

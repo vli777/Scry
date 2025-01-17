@@ -64,13 +64,19 @@ def remove_low_importance_features(
 
     # Identify low-importance features
     low_importance_features = [
-        feature_names[i] for i, importance in enumerate(shap_importances) if importance < threshold
+        feature_names[i]
+        for i, importance in enumerate(shap_importances)
+        if importance < threshold
     ]
 
     # Ensure at least one feature remains
     if len(low_importance_features) == len(X_train.columns):
-        print("Warning: All features were marked as low importance. Retaining top features.")
-        low_importance_features = low_importance_features[:-1]  # Retain at least one feature
+        print(
+            "Warning: All features were marked as low importance. Retaining top features."
+        )
+        low_importance_features = low_importance_features[
+            :-1
+        ]  # Retain at least one feature
 
     print(f"Removing features: {low_importance_features}")
 
@@ -80,7 +86,9 @@ def remove_low_importance_features(
 
     # Verify the reduced dataset is valid
     if X_train_reduced.shape[1] == 0:
-        raise ValueError("No features remain after feature removal. Adjust the threshold.")
+        raise ValueError(
+            "No features remain after feature removal. Adjust the threshold."
+        )
 
     # Retrain the model on the reduced feature set
     reduced_model, reduced_rmse = train_lgbm(
@@ -103,20 +111,26 @@ if __name__ == "__main__":
         )
 
     # Use TreeExplainer for the loaded model
-    explainer = shap.Explainer(lgbm_model, X_train)  # Assuming X_train is available in your scope
+    explainer = shap.Explainer(
+        lgbm_model, X_train
+    )  # Assuming X_train is available in your scope
     # Check for missing values in the test set
     print(X_test.isnull().sum())
     X_test.fillna(X_test.mean(), inplace=True)
-    
-    shap_values = explainer(X_test, check_additivity=False)  # Generate SHAP values for the test set
+
+    shap_values = explainer(
+        X_test, check_additivity=False
+    )  # Generate SHAP values for the test set
     shap.summary_plot(shap_values)
 
     # Remove low-importance features and retrain the reduced model
-    lgbm_model_reduced, X_train_reduced, X_test_reduced = remove_low_importance_features(
-        lgbm_model,
-        X_train,
-        X_test,
-        y_train,
-        y_test,
-        save_path="models/lgbm_model_reduced.pkl",
+    lgbm_model_reduced, X_train_reduced, X_test_reduced = (
+        remove_low_importance_features(
+            lgbm_model,
+            X_train,
+            X_test,
+            y_train,
+            y_test,
+            save_path="models/lgbm_model_reduced.pkl",
+        )
     )
