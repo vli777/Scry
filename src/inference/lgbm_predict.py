@@ -1,7 +1,8 @@
 import joblib
 import pandas as pd
-import pandas_ta as ta
 
+from data_utils.incremental_features import calculate_features_incrementally
+from data_utils.incremental_data import fetch_current_data
 from training.process_data import prepare_features
 
 
