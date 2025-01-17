@@ -3,7 +3,7 @@ import pandas as pd
 
 from data_utils.incremental_features import calculate_features_incrementally
 from data_utils.incremental_data import fetch_current_data
-from training.process_data import prepare_features
+from data_utils.process_data import prepare_features
 
 
 def predict_close_price(

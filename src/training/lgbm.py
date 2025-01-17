@@ -5,7 +5,7 @@ from sklearn.metrics import root_mean_squared_error, r2_score
 import shap
 import joblib
 
-from process_data import continuous_columns
+from data_utils.process_data import continuous_columns
 
 # Load processed data
 FILE_PATH = "data/processed/SPY_5min_processed.parquet"

@@ -19,7 +19,7 @@ def save_incremental_data(
     last_timestamp = pd.to_datetime(df_recent["timestamp"].max())
 
     now = pd.Timestamp.now()
-    
+
     # If you want a "no-op" check for the last 5 minutes of trading (4:00 PM close),
     # you can do something like:
     market_close = pd.Timestamp(now.date()) + pd.Timedelta(hours=16)  # 4:00 PM
@@ -47,4 +47,3 @@ def save_incremental_data(
 
 if __name__ == "__main__":
     save_incremental_data(ticker="SPY", interval="5min")
-
