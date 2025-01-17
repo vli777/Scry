@@ -1,0 +1,9 @@
+# config.yaml
+symbol: "BKNG"
+frequency: 5
+frequency_type: "minute"
+
+paths:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  scaler_dir: "data/processed/scalers"
