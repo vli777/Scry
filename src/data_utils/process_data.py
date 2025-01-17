@@ -6,6 +6,7 @@ from sklearn.preprocessing import StandardScaler
 import joblib
 
 from compute_features import compute_indicators
+from config_loader import config
 
 stoch_intervals = [5, 10, 15, 20, 25, 30]
 ma_periods = [20, 50, 60, 120, 200, 300]
@@ -60,8 +61,8 @@ def prepare_features(df, scaler_path=None, fit_scaler=False):
 
     # Fit or load scaler
     if fit_scaler or not (scaler_path and os.path.exists(scaler_path)):
-    # If we need to fit a scaler either because fit_scaler is True 
-    # or the scaler file doesn't exist, then do so.
+        # If we need to fit a scaler either because fit_scaler is True
+        # or the scaler file doesn't exist, then do so.
         scaler = StandardScaler()
         scaler.fit(df[continuous_columns])
         if scaler_path:
@@ -76,25 +77,22 @@ def prepare_features(df, scaler_path=None, fit_scaler=False):
 
 
 if __name__ == "__main__":
-    SYMBOL = "SPY"
-    FILE_PATH = f"data/raw/{SYMBOL}_5min_data.parquet"
-    SCALER_PATH = f"data/processed/scaler_{SYMBOL}.pkl"
-    PROCESSED_FILE_PATH = f"data/processed/{SYMBOL}_5min_processed.parquet"
-
     # Check if processed file already exists
-    if os.path.exists(PROCESSED_FILE_PATH):
+    if os.path.exists(config.processed_file):
         print(
-            f"Processed file {PROCESSED_FILE_PATH} already exists. Skipping processing."
+            f"Processed file {config.processed_file} already exists. Skipping processing."
         )
     else:
-        df = pd.read_parquet(FILE_PATH)
-        df, scaler = prepare_features(df, scaler_path=SCALER_PATH, fit_scaler=False)
-        df.to_parquet(
-            PROCESSED_FILE_PATH, engine="pyarrow", compression="snappy", index=False
+        df = pd.read_parquet(config.raw_file)
+        df, scaler = prepare_features(
+            df, scaler_path=config.scaler_file, fit_scaler=False
         )
-        print(f"Processing complete. File saved to {PROCESSED_FILE_PATH}")
+        df.to_parquet(
+            config.processed_file, engine="pyarrow", compression="snappy", index=False
+        )
+        print(f"Processing complete. File saved to {config.processed_file}")
 
     # Check loaded data regardless
-    df = pd.read_parquet(PROCESSED_FILE_PATH)
+    df = pd.read_parquet(config.processed_file)
     print(f"Total rows loaded: {len(df)}")
     print(df.tail())

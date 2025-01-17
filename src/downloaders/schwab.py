@@ -4,20 +4,15 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 
+from config_loader import config
+
 load_dotenv()
 
-API_TOKEN = os.environ.get("SCHWAB_BEARER_TOKEN")
-if API_TOKEN is None:
+BEARER_TOKEN = os.environ.get("SCHWAB_BEARER_TOKEN")
+if BEARER_TOKEN is None:
     raise ValueError("SCHWAB_BEARER_TOKEN environment variable not set")
 
 BASE_URL = "https://api.schwabapi.com/marketdata/v1/pricehistory"
-SYMBOL = "VST"
-START_DATE = datetime.now(timezone.utc) - timedelta(days=10)
-FREQUENCY_TYPE = "minute"
-FREQUENCY = 5
-OUTPUT_DIR = "data/raw"
-OUTPUT_FILE = f"{SYMBOL}_{FREQUENCY}min_data.parquet"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
 def fetch_data_schwab(
@@ -200,14 +195,14 @@ def save_to_parquet(candles, filename):
 
 
 def main():
-    file_path = os.path.join(OUTPUT_DIR, OUTPUT_FILE)
+    file_path = config.raw_file
     last_saved_timestamp = get_last_saved_timestamp(file_path)
 
     if last_saved_timestamp:
         start = last_saved_timestamp + timedelta(minutes=5)
         print(f"Resuming from {start}...")
     else:
-        start = START_DATE
+        start = datetime.now(timezone.utc) - timedelta(days=10)
         print(f"Starting from the default start date: {start}...")
 
     now = datetime.now(timezone.utc)
@@ -216,10 +211,10 @@ def main():
     effective_end_date = min(now, market_close_time)
 
     chunked_candles = fetch_data_schwab(
-        symbol=SYMBOL,
-        bearer_token=API_TOKEN,
-        frequency_type=FREQUENCY_TYPE,
-        frequency=FREQUENCY,
+        symbol=config.symbol,
+        bearer_token=BEARER_TOKEN,
+        frequency_type=config.frequency_type,
+        frequency=config.frequency,
         start_date=start,
         end_date=effective_end_date,
         max_chunk_days=10,  # chunk by api limit of 10 days

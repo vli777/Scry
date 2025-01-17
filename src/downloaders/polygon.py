@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 import os
 import time
 
+from config_loader import config
+
 load_dotenv()
 
 api_token = os.environ.get("POLYGON_API_TOKEN")
@@ -14,19 +16,12 @@ if api_token is None:
 
 API_KEY = api_token
 BASE_URL = "https://api.polygon.io/v2/aggs/ticker"
-TICKER = "NVDA"
-MULTIPLIER = 5  # 5-minute bars
-TIMESPAN = "minute"   
-END_DATE = datetime.today().date()   
-START_DATE = END_DATE - timedelta(days=2*365) # 2 Years back
+
+END_DATE = datetime.today()
+START_DATE = END_DATE - timedelta(days=2 * 365)  # 2 Years back
 CHUNK_DAYS = 90  # 3-month chunks
 RATE_LIMIT_CALLS = 5  # Max calls per minute
 RATE_LIMIT_SLEEP = 60  # Seconds to sleep after RATE_LIMIT_CALLS
-OUTPUT_DIR = "data/raw"
-OUTPUT_FILE = f"{TICKER}_5min_data.parquet"
-
-# Ensure the output directory exists
-os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
 def fetch_data(ticker, multiplier, timespan, from_date, to_date, adjusted=True):
@@ -90,12 +85,10 @@ def get_last_saved_timestamp(filename):
 
 def main():
     # Get the last saved timestamp or start from the default start date
-    last_saved_timestamp = get_last_saved_timestamp(
-        os.path.join(OUTPUT_DIR, OUTPUT_FILE)
-    )
+    last_saved_timestamp = get_last_saved_timestamp(config.raw_file)
     if last_saved_timestamp:
         current_start = last_saved_timestamp + timedelta(
-            minutes=MULTIPLIER
+            minutes=config.frequency
         )  # Start x minutes after the last saved timestamp
         print(f"Resuming from {current_start}...")
     else:
@@ -110,14 +103,18 @@ def main():
         print(f"Fetching data from {current_start} to {current_end}...")
         try:
             data = fetch_data(
-                TICKER, MULTIPLIER, TIMESPAN, current_start.date(), current_end.date()
+                config.symbol,
+                config.frequency,
+                config.frequency_type,
+                current_start.date(),
+                current_end.date(),
             )
             if data:
-                save_chunk_to_parquet(data, os.path.join(OUTPUT_DIR, OUTPUT_FILE))
+                save_chunk_to_parquet(data, config.raw_file)
                 print(f"Saved data for {current_start.date()} to {current_end.date()}.")
                 # Update current_start based on the last data point fetched
                 current_start = pd.to_datetime(data[-1]["t"], unit="ms") + timedelta(
-                    minutes=MULTIPLIER
+                    minutes=config.frequency
                 )
             else:
                 print(f"No data for {current_start.date()} to {current_end.date()}.")
@@ -142,7 +139,7 @@ def main():
             )
             break  # Exit loop on error to avoid overwriting or duplicating data
 
-    print(f"All data saved to {os.path.join(OUTPUT_DIR, OUTPUT_FILE)}.")
+    print(f"All data saved to {config.raw_file}.")
 
 
 if __name__ == "__main__":
