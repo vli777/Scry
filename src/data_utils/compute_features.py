@@ -15,6 +15,16 @@ def compute_indicators(
     :param ma_periods: List of MA periods.
     :return: DataFrame with new indicator columns added.
     """
+    # --- VWAP ---
+    # Ensure 'timestamp' column is datetime and set as index
+    if "timestamp" in df.columns:
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df.set_index("timestamp", inplace=True)
+    else:
+        # If there's no timestamp column but the index is not datetime, raise an error or handle accordingly.
+        raise ValueError("DataFrame must have a 'timestamp' column.")
+    df.index = df.index.tz_localize(None)
+    df["vwap"] = ta.vwap(df["high"], df["low"], df["close"], df["volume"])
 
     # --- MACD ---
     macd = ta.macd(df["close"], fast=12, slow=26, signal=9)
@@ -56,5 +66,8 @@ def compute_indicators(
     tsi = ta.tsi(df["close"], fast=13, slow=25, signal=13)
     df["tsi"] = tsi["TSI_13_25_13"]
     df["tsi_signal"] = tsi["TSIs_13_25_13"]
+
+    # Reset index
+    df.reset_index(inplace=True)
 
     return df
