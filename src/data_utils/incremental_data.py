@@ -1,31 +1,28 @@
+from datetime import datetime
 import pandas as pd
 
 from downloaders.schwab import fetch_data_schwab
 
 
 def fetch_current_data(
-    ticker, interval="1h", start=None, bearer_token="your_bearer_token"
+    ticker: str = "SPY",
+    start: datetime = None,
+    bearer_token: str = "your_bearer_token",
+    period_type: str = "day",
+    frequency_type: str = "minute",
+    frequency: int = 5,
 ):
     """
     Fetch recent data from the Schwab API, starting from the last timestamp in the dataset.
 
     :param ticker: The stock ticker symbol.
-    :param interval: Data interval (e.g., '1h', '1d').
     :param start: The last timestamp in the existing dataset (datetime).
     :param bearer_token: The API bearer token for authentication.
+    :param period_type: Data period granularity e.g. 'day'
+    :param frequency_type: Tick interval granularity, default 'minute'
+    :param frequency: Tick interval number value, default 5 for 5 minute bars
     :return: DataFrame with the new data.
     """
-    # --- Interval mapping ---
-    interval_map = {
-        "1h": ("day", "minute", 60),  # Daily period, hourly frequency
-        "1d": ("month", "daily", 1),  # Monthly period, daily frequency
-    }
-
-    if interval not in interval_map:
-        raise ValueError(f"Unsupported interval: {interval}")
-
-    period_type, frequency_type, frequency = interval_map[interval]
-
     # --- Define the date range ---
     from_date = (
         pd.Timestamp(start) if start else pd.Timestamp.now() - pd.Timedelta(days=1)
@@ -35,12 +32,12 @@ def fetch_current_data(
     # --- Fetch data ---
     candles = fetch_data_schwab(
         symbol=ticker,
+        from_date=from_date.to_pydatetime(),
+        to_date=to_date.to_pydatetime(),
+        bearer_token=bearer_token,
         period_type=period_type,
         frequency_type=frequency_type,
         frequency=frequency,
-        from_date=from_date,
-        to_date=to_date,
-        bearer_token=bearer_token,
     )
 
     # --- Convert to DataFrame ---

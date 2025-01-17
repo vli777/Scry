@@ -1,7 +1,6 @@
 import os
 import requests
 import pandas as pd
-import pyarrow
 from datetime import datetime, timedelta
 import time
 
@@ -12,12 +11,18 @@ if API_TOKEN is None:
 
 BASE_URL = "https://api.schwabapi.com/marketdata/v1/pricehistory"
 SYMBOL = "SPY"
-PERIOD_TYPE = "day"  # from your example
-FREQUENCY_TYPE = "minute"  # from your example
+
+PERIOD_TYPE = (
+    "day"  # 'day' means we can fetch data for multiple days in minute granularity
+)
+FREQUENCY_TYPE = "minute"
 FREQUENCY = 5  # 5-minute bars
-START_DATE = datetime(2023, 1, 10)
-END_DATE = datetime(2025, 1, 10)
-CHUNK_DAYS = 90
+
+# 2 years back from now
+START_DATE = datetime.now() - timedelta(days=2 * 365)
+END_DATE = datetime.now()
+
+CHUNK_DAYS = 90  # Only needed if we chunk large requests
 RATE_LIMIT_CALLS = 5
 RATE_LIMIT_SLEEP = 12
 OUTPUT_DIR = "data/raw"
@@ -27,10 +32,18 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
 def fetch_data_schwab(
-    symbol, period_type, frequency_type, frequency, from_date, to_date, bearer_token
+    symbol: str,
+    from_date: datetime,
+    to_date: datetime,
+    bearer_token: str,
+    period_type: str = "day",  # 'day' means we can fetch up to minute-level data
+    frequency_type: str = "minute",
+    frequency: int = 5,  # Default to 5-minute bars
 ):
     """
-    Fetch data from the Schwab Market Data API
+    Fetch data from the Schwab Market Data API for the given date range.
+    Allows specifying period_type, frequency_type, and frequency if needed.
+    Defaults to a 5-minute bar setup.
     """
     url = BASE_URL
     headers = {"Authorization": f"Bearer {bearer_token}"}

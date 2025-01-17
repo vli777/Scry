@@ -9,32 +9,23 @@ load_dotenv()
 
 
 def save_incremental_data(
-    ticker="SPY", interval="1h", feature_path="data/processed/spy_features.parquet"
+    ticker="SPY", interval="5min", feature_path="data/processed/spy_features.parquet"
 ):
     """
-    Fetch new data and update saved features incrementally, skipping API calls if data is up-to-date.
+    Fetch new 5-minute data and update saved features incrementally, skipping API calls if data is up-to-date.
     """
     # Load existing features
     df_recent = pd.read_parquet(feature_path)
-    last_timestamp = pd.to_datetime(
-        df_recent["timestamp"].max()
-    )  # Ensure proper datetime type
+    last_timestamp = pd.to_datetime(df_recent["timestamp"].max())
 
-    # Check if the market is open today and if the last timestamp is recent enough
     now = pd.Timestamp.now()
-    if interval == "1h":
-        market_close = pd.Timestamp(now.date()) + pd.Timedelta(
-            hours=16
-        )  # Assuming 4:00 PM market close
-        if last_timestamp >= market_close - pd.Timedelta(
-            hours=1
-        ):  # Last hour of trading
-            print(f"Data is already up-to-date for {ticker} at {interval} interval.")
-            return
-    elif interval == "1d":
-        if last_timestamp.date() >= now.date():
-            print(f"Data is already up-to-date for {ticker} at {interval} interval.")
-            return
+    
+    # If you want a "no-op" check for the last 5 minutes of trading (4:00 PM close),
+    # you can do something like:
+    market_close = pd.Timestamp(now.date()) + pd.Timedelta(hours=16)  # 4:00 PM
+    if last_timestamp >= market_close - pd.Timedelta(minutes=5):
+        print(f"Data is already up-to-date for {ticker} at {interval} interval.")
+        return
 
     # Fetch new data using the bearer token from .env
     bearer_token = os.getenv("SCHWAB_BEARER_TOKEN")
@@ -55,4 +46,5 @@ def save_incremental_data(
 
 
 if __name__ == "__main__":
-    save_incremental_data(ticker="SPY", interval="1h")
+    save_incremental_data(ticker="SPY", interval="5min")
+
