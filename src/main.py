@@ -3,8 +3,7 @@ import os
 from dotenv import load_dotenv
 
 from training.tft import train_tft
-from inference.tft_predict import predict_close_price_tft
-from data_utils.incremental_features import fetch_and_incremental_update
+from inference.tft_predict import fetch_and_incremental_update, predict_close_price_tft
 
 
 def main():

@@ -120,7 +120,7 @@ def _fetch_chunked_schwab(
 
         params = {
             "symbol": symbol,
-            "periodType": "day", 
+            "periodType": "day",
             "frequencyType": frequency_type,
             "frequency": frequency,
             "startDate": int(current_start.timestamp() * 1000),
@@ -165,16 +165,20 @@ def fill_missing_gaps(df, freq_minutes=5):
     # Ensure 'timestamp' is a UTC-aware datetime and set it as the DataFrame index
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
     df = df.sort_values("timestamp").set_index("timestamp")
-    
+
     # Create a complete date range from the minimum to maximum timestamp at the expected frequency
-    full_range = pd.date_range(start=df.index.min(), end=df.index.max(),
-                               freq=pd.Timedelta(minutes=freq_minutes), tz='UTC')
-    
+    full_range = pd.date_range(
+        start=df.index.min(),
+        end=df.index.max(),
+        freq=pd.Timedelta(minutes=freq_minutes),
+        tz="UTC",
+    )
+
     # Reindex the DataFrame to the full range, inserting NaN for missing timestamps
     df = df.reindex(full_range)
     df.index.name = "timestamp"
     df.reset_index(inplace=True)
-    
+
     return df
 
 
@@ -191,27 +195,31 @@ def save_to_parquet(candles, filename, freq_minutes=5):
     if os.path.exists(filename):
         existing_data = pd.read_parquet(filename)
         # Ensure existing data timestamps are UTC-aware
-        existing_data["timestamp"] = pd.to_datetime(existing_data["timestamp"], utc=True)
-        existing_data = existing_data[["timestamp", "open", "high", "low", "close", "volume"]]
-        
+        existing_data["timestamp"] = pd.to_datetime(
+            existing_data["timestamp"], utc=True
+        )
+        existing_data = existing_data[
+            ["timestamp", "open", "high", "low", "close", "volume"]
+        ]
+
         # Combine old and new data
         df = pd.concat([existing_data, df], ignore_index=True)
 
     # Remove duplicates based on timestamp
     df.drop_duplicates(subset=["timestamp"], inplace=True)
-    
+
     # Fill gaps by inserting missing timestamps
     df = fill_missing_gaps(df, freq_minutes=freq_minutes)
-    
+
     # Save the complete DataFrame to Parquet
     df.to_parquet(filename, engine="pyarrow", compression="snappy", index=False)
     print(f"Data saved to {filename}.")
-    
-    
+
+
 def main():
     file_path = os.path.join(OUTPUT_DIR, OUTPUT_FILE)
     last_saved_timestamp = get_last_saved_timestamp(file_path)
-    
+
     if last_saved_timestamp:
         start = last_saved_timestamp + timedelta(minutes=5)
         print(f"Resuming from {start}...")
