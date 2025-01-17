@@ -1,9 +1,11 @@
+from dotenv import load_dotenv
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
 import os
 import time
 
+load_dotenv()
 
 api_token = os.environ.get("POLYGON_API_TOKEN")
 
@@ -12,16 +14,16 @@ if api_token is None:
 
 API_KEY = api_token
 BASE_URL = "https://api.polygon.io/v2/aggs/ticker"
-TICKER = "SPY"
+TICKER = "NVDA"
 MULTIPLIER = 5  # 5-minute bars
 TIMESPAN = "minute"
 START_DATE = datetime(2023, 1, 10)  # Original start date
 END_DATE = datetime(2025, 1, 10)  # Final end date
 CHUNK_DAYS = 90  # 3-month chunks
 RATE_LIMIT_CALLS = 5  # Max calls per minute
-RATE_LIMIT_SLEEP = 12  # Seconds to sleep after RATE_LIMIT_CALLS
+RATE_LIMIT_SLEEP = 60  # Seconds to sleep after RATE_LIMIT_CALLS
 OUTPUT_DIR = "data/raw"
-OUTPUT_FILE = "SPY_5min_data.parquet"
+OUTPUT_FILE = f"{TICKER}_5min_data.parquet"
 
 # Ensure the output directory exists
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -93,14 +95,15 @@ def main():
     )
     if last_saved_timestamp:
         current_start = last_saved_timestamp + timedelta(
-            minutes=5
-        )  # Start 5 minutes after the last saved timestamp
+            minutes=MULTIPLIER
+        )  # Start x minutes after the last saved timestamp
         print(f"Resuming from {current_start}...")
     else:
         current_start = START_DATE
         print(f"Starting from the default start date: {current_start}...")
 
     call_count = 0
+    start_time = time.time()
 
     while current_start < END_DATE:
         current_end = min(current_start + timedelta(days=CHUNK_DAYS), END_DATE)
@@ -114,7 +117,7 @@ def main():
                 print(f"Saved data for {current_start.date()} to {current_end.date()}.")
                 # Update current_start based on the last data point fetched
                 current_start = pd.to_datetime(data[-1]["t"], unit="ms") + timedelta(
-                    minutes=5
+                    minutes=MULTIPLIER
                 )
             else:
                 print(f"No data for {current_start.date()} to {current_end.date()}.")
@@ -123,8 +126,16 @@ def main():
             # Rate-limiting
             call_count += 1
             if call_count % RATE_LIMIT_CALLS == 0:
-                print(f"Rate limit reached. Sleeping for {RATE_LIMIT_SLEEP} seconds...")
-                time.sleep(RATE_LIMIT_SLEEP)
+                elapsed_time = time.time() - start_time
+                if elapsed_time < RATE_LIMIT_SLEEP:
+                    sleep_time = RATE_LIMIT_SLEEP - elapsed_time
+                    print(
+                        f"Rate limit reached. Sleeping for {sleep_time:.2f} seconds..."
+                    )
+                    time.sleep(sleep_time)
+                # Reset start_time for the next batch of 5 calls
+                start_time = time.time()
+
         except Exception as e:
             print(
                 f"Error fetching data for {current_start.date()} to {current_end.date()}: {e}"
