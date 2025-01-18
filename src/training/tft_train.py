@@ -74,8 +74,8 @@ def train_tft(
     )
 
     # 5) Create dataloaders
-    train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=2)
-    val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size, num_workers=2)
+    train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=8)
+    val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size, num_workers=8)
 
     # 6) Configure network and trainer
     pl.seed_everything(42)
