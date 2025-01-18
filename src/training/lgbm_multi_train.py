@@ -1,11 +1,10 @@
 import joblib
 import os
 import pandas as pd
-from sklearn.base import r2_score
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import root_mean_squared_error
+from sklearn.metrics import root_mean_squared_error, r2_score
 import lightgbm as lgb
-from ..config_loader import config
+from src.preprocessing.process_data import continuous_columns
 
 
 def train_lgbm_multi(df, steps=12, save_path=None):
@@ -13,76 +12,81 @@ def train_lgbm_multi(df, steps=12, save_path=None):
     Train a single LightGBM model to predict multiple steps simultaneously.
     Each target column represents one future step.
     """
+
     # Prepare features and multi-step targets
-    target_cols = [f"target_{step}" for step in range(1, steps + 1)]
-    X = df.drop(columns=target_cols + ["timestamp", "symbol", "close"])
-    Y = df[target_cols]
+    df, target_cols = prepare_multi_step_targets(df, steps=steps)
 
-    # Initial split: 90% training/validation, 10% test
-    train_val_X, test_X, train_val_y, test_y = train_test_split(
-        X, Y, test_size=0.1, random_state=42
-    )
+    # Validate continuous columns
+    feature_columns = [col for col in continuous_columns if col in df.columns]
+    if not feature_columns:
+        raise ValueError("No valid feature columns found in the DataFrame.")
 
-    # Further split training/validation: 80% train, 10% validation
-    train_X, val_X, train_y, val_y = train_test_split(
-        train_val_X, train_val_y, test_size=0.1111, random_state=42
-    )  # 10% of 90% is ~11.11%
+    # Select features and targets
+    X = df[feature_columns]
 
-    # - train_X and train_y: 80% of the total dataset
-    # - val_X and val_y: 10% of the total dataset
-    # - test_X and test_y: 10% of the total dataset
+    models = {}
+    for step, target_col in enumerate(target_cols, start=1):
+        print(f"Training model for step {step}...")
 
-    # Train a single LightGBM model
-    print("Training a single model for multi-step prediction...")
-    model = lgb.LGBMRegressor(
-        random_state=42,
-        n_estimators=100,
-        learning_rate=0.1,
-    )
-    model.fit(train_X, train_y)
+        # Extract target for the current step
+        y = df[target_col]
 
-    # Evaluate the model on each step
-    y_pred = model.predict(test_X)
-    for step in range(steps):
-        step_rmse = root_mean_squared_error(test_y.iloc[:, step], y_pred[:, step])
-        step_r2 = r2_score(test_y.iloc[:, step], y_pred[:, step])
-        print(f"Step {step + 1} RMSE: {step_rmse:.4f}")
-        print(f"Step {step + 1} R²: {step_r2:.4f}")
+        # Initial split: 90% training/validation, 10% test
+        X_train_val, X_test, y_train_val, y_test = train_test_split(
+            X, y, test_size=0.1, random_state=42
+        )
 
-    # Save the model
-    if save_path:
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        joblib.dump(model, save_path)
-        print(f"Model saved to {save_path}")
+        # Further split training/validation: 80% train, 10% validation
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_train_val, y_train_val, test_size=0.1111, random_state=42
+        )  # 10% of 90% is ~11.11%
 
-    return model
+        # - X_train and y_train: 80% of the total dataset
+        # - X_val and y_val: 10% of the total dataset
+        # - X_test and y_test: 10% of the total dataset
+
+        # Train a single LightGBM model
+        print("Training a single model for multi-step prediction...")
+        model = lgb.LGBMRegressor(
+            random_state=42,
+            n_estimators=100,
+            learning_rate=0.1,
+        )
+        model.fit(X_train, y_train)
+
+        # Evaluate the model
+        y_pred = model.predict(X_test)
+        step_rmse = root_mean_squared_error(y_test, y_pred)
+        step_r2 = r2_score(y_test, y_pred)
+        print(f"Step {step} RMSE: {step_rmse:.4f}")
+        print(f"Step {step} R²: {step_r2:.4f}")
+
+        step_save_path = f"{save_path}_step_{step}.pkl" if save_path else None
+        if step_save_path:
+            os.makedirs(os.path.dirname(step_save_path), exist_ok=True)
+            joblib.dump(model, step_save_path)
+            print(f"Model for step {step} saved to {step_save_path}")
+
+        # Store the model for this step
+        models[f"step_{step}"] = model
+
+    return models
 
 
 def prepare_multi_step_targets(df, steps=12):
     """
     Adds future close price columns as targets for multi-step prediction.
+    Returns the updated DataFrame and a list of target column names.
     """
+    if "close" not in df.columns:
+        raise ValueError("'close' column is missing from the dataset.")
+
+    target_cols = []
     for step in range(1, steps + 1):
-        df[f"target_{step}"] = df["close"].shift(-step)
+        target_col = f"target_{step}"
+        df[target_col] = df["close"].shift(-step)
+        target_cols.append(target_col)
 
     # Drop rows with NaN targets (incomplete future data)
-    df = df.dropna(subset=[f"target_{step}" for step in range(1, steps + 1)])
-    return df
-
-
-if __name__ == "__main__":
-    # Load processed data
-    df = pd.read_parquet(config.processed_file)
-
-    # Prepare multi-step targets
-    df = prepare_multi_step_targets(df, steps=12)
-
-    # Generate dynamic model path
-    multi_model_path = os.path.join(
-        config.model_dir, f"{config.model_type}_{config.symbol}_multi.pkl"
-    )
-
-    # Train a single LightGBM model for multi-step prediction
-    model = train_lgbm_multi(df, steps=12, save_path=multi_model_path)
-
-    print("Multi-step LightGBM training complete.")
+    df = df.dropna(subset=target_cols)
+    return df, target_cols

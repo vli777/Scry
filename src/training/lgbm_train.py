@@ -3,15 +3,16 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from dotenv import load_dotenv
 from src.config_loader import config
-from training.lgbm_multi_train import prepare_multi_step_targets, train_lgbm_multi
-from training.lgbm_single_train import train_lgbm
+from src.training.lgbm_multi_train import train_lgbm_multi
+from src.training.lgbm_single_train import train_lgbm
+from src.preprocessing.process_data import continuous_columns
 
 
 def main():
     load_dotenv()
 
     # Mode selection: "single" or "multi"
-    mode = "multi"  # Change to "single" for single-step training
+    mode = "single"  # Change to "single" for single-step training
     steps = 12  # Number of steps for multi-step training
 
     # Paths for models
@@ -28,7 +29,7 @@ def main():
     if mode == "single":
         print("Training single-step LGBM model...")
         # Extract features and target
-        X = df[config.continuous_columns]
+        X = df[continuous_columns]
         y = df["close"]
 
         # Split data
@@ -41,8 +42,6 @@ def main():
 
     elif mode == "multi":
         print("Training multi-step LGBM model...")
-        # Prepare multi-step targets
-        df = prepare_multi_step_targets(df, steps=steps)
 
         # Train multi-step model
         train_lgbm_multi(df, steps=steps, save_path=multi_model_path)

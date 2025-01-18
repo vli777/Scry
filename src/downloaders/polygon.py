@@ -5,7 +5,8 @@ from datetime import datetime, timedelta
 import os
 import time
 
-from ..config_loader import config
+from src.downloaders.utils.helpers import get_last_saved_timestamp
+from src.config_loader import config
 
 load_dotenv()
 

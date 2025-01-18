@@ -7,13 +7,10 @@ from pytorch_forecasting import TimeSeriesDataSet
 from pytorch_forecasting.models.temporal_fusion_transformer import (
     TemporalFusionTransformer,
 )
-
-load_dotenv()
-from ..config_loader import config
-
-from downloaders.utils.helpers import get_last_saved_timestamp
-from downloaders.schwab import fetch_data_schwab, save_to_parquet
-from preprocessing.process_data import prepare_features
+from src.config_loader import config
+from src.downloaders.utils.helpers import get_last_saved_timestamp
+from src.downloaders.schwab import fetch_data_schwab, save_to_parquet
+from src.preprocessing.process_data import prepare_features
 
 
 def build_tft_dataset(
@@ -170,6 +167,7 @@ def predict_close_price_tft(
 
 
 if __name__ == "__main__":
+    load_dotenv()
     bearer_token = os.getenv("SCHWAB_BEARER_TOKEN")
     if bearer_token is None:
         raise ValueError("SCHWAB_BEARER_TOKEN environment variable not set")

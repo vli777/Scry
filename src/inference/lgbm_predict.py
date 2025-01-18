@@ -4,9 +4,9 @@ from dotenv import load_dotenv
 import joblib
 import pandas as pd
 
-from downloaders.schwab import fetch_data_schwab, save_to_parquet
-from preprocessing.process_data import prepare_features
-from ..config_loader import Config, config
+from src.downloaders.schwab import fetch_data_schwab, save_to_parquet
+from src.preprocessing.process_data import prepare_features
+from src.config_loader import Config, config
 
 
 def predict_close_price_lgbm(

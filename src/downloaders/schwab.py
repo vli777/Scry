@@ -4,9 +4,8 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 
-from ..config_loader import config
-
-from downloaders.utils.helpers import get_last_saved_timestamp
+from src.config_loader import config
+from src.downloaders.utils.helpers import get_last_saved_timestamp
 
 load_dotenv()
 

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
 
-from inference.tft_predict import predict_close_price_tft
+from src.inference.tft_predict import predict_close_price_tft
 
 
 class PredictRequest(BaseModel):

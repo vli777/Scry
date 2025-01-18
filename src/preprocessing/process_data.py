@@ -5,9 +5,8 @@ import pandas_ta as ta
 from sklearn.preprocessing import StandardScaler
 import joblib
 
-from ..config_loader import config
-
-from compute_features import compute_indicators
+from src.config_loader import config
+from src.preprocessing.compute_features import compute_indicators
 
 
 stoch_intervals = [5, 10, 15, 20, 25, 30]

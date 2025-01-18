@@ -10,7 +10,7 @@ from pytorch_forecasting.models.temporal_fusion_transformer import (
 )
 from pytorch_forecasting.data import DataLoader
 
-from ..config_loader import config
+from src.config_loader import config
 
 
 def train_tft(

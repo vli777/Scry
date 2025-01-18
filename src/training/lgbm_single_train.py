@@ -6,10 +6,22 @@ from sklearn.metrics import root_mean_squared_error, r2_score
 import shap
 import joblib
 
-from ..config_loader import config
+from src.config_loader import config
 
 
-def train_lgbm(X_train, y_train, X_test, y_test, params=None, save_path=None):
+def train_lgbm(
+    X_train, y_train, X_test, y_test, params=None, save_path=None, shap_enabled=True
+):
+    """
+    Train a single-step LightGBM model and optionally compute SHAP values.
+
+    :param X_train: Training feature data.
+    :param y_train: Training target data.
+    :param X_test: Test feature data.
+    :param y_test: Test target data.
+    :param save_path: Path to save the model.
+    :param shap_enabled: Whether to compute SHAP values.
+    """
     if params is None:
         params = {
             "random_state": 42,
@@ -34,7 +46,21 @@ def train_lgbm(X_train, y_train, X_test, y_test, params=None, save_path=None):
         joblib.dump(model, save_path)
         print(f"Model saved to {save_path}")
 
+    # Optionally compute SHAP values
+    if shap_enabled:
+        compute_shap_values(model, X_train, X_test)
+
     return model, rmse
+
+
+def compute_shap_values(model, X_train, X_test):
+    """
+    Compute and display SHAP values for the given model and datasets.
+    """
+    print("Generating SHAP values for feature importance...")
+    explainer = shap.Explainer(model, X_train)
+    shap_values = explainer(X_test, check_additivity=False)
+    shap.summary_plot(shap_values, X_test)
 
 
 def remove_low_importance_features(
@@ -63,49 +89,3 @@ def remove_low_importance_features(
     )
 
     return reduced_model, X_train_reduced, X_test_reduced
-
-
-if __name__ == "__main__":
-    # Load processed data
-    df = pd.read_parquet(config.processed_file)
-
-    # Extract features and target
-    X = df[config.continuous_columns]
-    y = df["close"]
-
-    # Split the dataset
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
-
-    # Generate dynamic model path
-    single_model_path = os.path.join(
-        config.model_dir, f"{config.model_type}_{config.symbol}_single.pkl"
-    )
-
-    # Load or train the initial model
-    try:
-        lgbm_model = joblib.load(single_model_path)
-        print(f"Loaded the initial model from {single_model_path}.")
-    except FileNotFoundError:
-        print("Initial model not found. Training a new one.")
-        lgbm_model = train_lgbm(
-            X_train, y_train, X_test, y_test, save_path=single_model_path
-        )
-
-    # Compute SHAP values and plot summary
-    print("Generating SHAP values for feature importance...")
-    explainer = shap.Explainer(lgbm_model, X_train)
-    shap_values = explainer(X_test, check_additivity=False)
-    shap.summary_plot(shap_values, X_test)
-
-    # Remove low-importance features and retrain
-    reduced_model_path = os.path.join(
-        config.model_dir, f"{config.model_type}_{config.symbol}_single_reduced.pkl"
-    )
-    lgbm_model_reduced, X_train_reduced, X_test_reduced = (
-        remove_low_importance_features(
-            lgbm_model, X_train, X_test, y_train, y_test, save_path=reduced_model_path
-        )
-    )
-    print(f"Reduced model saved to {reduced_model_path}.")

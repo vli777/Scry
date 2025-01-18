@@ -4,12 +4,12 @@ import argparse
 from dotenv import load_dotenv
 
 
-from .config_loader import config
+from src.config_loader import config
 
-from downloaders.schwab import fetch_data_schwab, save_to_parquet
-from downloaders.utils.helpers import get_last_saved_timestamp
-from inference.tft_predict import predict_close_price_tft
-from training.tft_train import train_tft
+from src.downloaders.schwab import fetch_data_schwab, save_to_parquet
+from src.downloaders.utils.helpers import get_last_saved_timestamp
+from src.inference.tft_predict import predict_close_price_tft
+from src.training.tft_train import train_tft
 
 
 def main():
