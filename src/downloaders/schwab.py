@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from src.config_loader import config
 from src.downloaders.utils.helpers import get_last_saved_timestamp
 
-load_dotenv()
+load_dotenv(override=True)
 
 BEARER_TOKEN = os.environ.get("SCHWAB_BEARER_TOKEN")
 if BEARER_TOKEN is None:

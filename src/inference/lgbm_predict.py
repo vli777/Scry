@@ -69,7 +69,7 @@ def predict_close_price_lgbm(
 if __name__ == "__main__":
     from dotenv import load_dotenv
 
-    load_dotenv()
+    load_dotenv(override=True)
 
     bearer_token = os.getenv("SCHWAB_BEARER_TOKEN")
     if bearer_token is None:

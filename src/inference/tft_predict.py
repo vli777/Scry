@@ -167,7 +167,7 @@ def predict_close_price_tft(
 
 
 if __name__ == "__main__":
-    load_dotenv()
+    load_dotenv(override=True)
     bearer_token = os.getenv("SCHWAB_BEARER_TOKEN")
     if bearer_token is None:
         raise ValueError("SCHWAB_BEARER_TOKEN environment variable not set")

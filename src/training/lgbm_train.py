@@ -9,7 +9,7 @@ from src.preprocessing.process_data import continuous_columns
 
 
 def main():
-    load_dotenv()
+    load_dotenv(override=True)
 
     # Mode selection: "single" or "multi"
     mode = "single"  # Change to "single" for single-step training

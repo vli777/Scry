@@ -8,7 +8,7 @@ import time
 from src.downloaders.utils.helpers import get_last_saved_timestamp
 from src.config_loader import config
 
-load_dotenv()
+load_dotenv(override=True)
 
 api_token = os.environ.get("POLYGON_API_TOKEN")
 
