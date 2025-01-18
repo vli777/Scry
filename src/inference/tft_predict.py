@@ -133,13 +133,13 @@ def predict_close_price_tft(
         end_date=effective_end_date,
         max_chunk_days=10,
     )
-    
+
     # Save new data if available
     if chunked_candles:
         save_to_parquet(chunked_candles, file_path)
     else:
         print("No new data fetched. Proceeding with existing data.")
-    
+
     # Preprocess data
     df = pd.read_parquet(file_path)
     df, scaler = prepare_features(df, scaler_path=scaler_path, fit_scaler=False)
@@ -148,7 +148,7 @@ def predict_close_price_tft(
     if "time_idx" not in df.columns:
         df = df.sort_values("timestamp").reset_index(drop=True)
         df["time_idx"] = range(len(df))
-        
+
     known_reals = ["time_idx"]
     all_cols = list(df.columns)
     exclude_cols = {"timestamp", "symbol", "time_idx", "close"}  # 'close' is target

@@ -71,7 +71,7 @@ def fetch_data_schwab(
 
 def _fetch_once_schwab(bearer_token: str, params: dict):
     """
-    Makes a single GET request to the Schwab pricehistory endpoint with the provided parameters.
+    Makes a single GET request to the Schwab price history endpoint with the provided parameters.
     Returns a list of candle objects.
     """
     url = BASE_URL

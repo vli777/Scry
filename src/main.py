@@ -13,8 +13,6 @@ from training.tft_train import train_tft
 
 
 def main():
-    load_dotenv()
-
     # CLI Parser
     parser = argparse.ArgumentParser(description="CLI for ML tasks")
     parser.add_argument(
@@ -38,6 +36,7 @@ def main():
 
     args = parser.parse_args()
 
+    load_dotenv()
     bearer_token = os.getenv("SCHWAB_BEARER_TOKEN")
     if bearer_token is None:
         raise ValueError("SCHWAB_BEARER_TOKEN environment variable not set")

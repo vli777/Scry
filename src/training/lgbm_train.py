@@ -27,12 +27,13 @@ def train_lgbm(X_train, y_train, X_test, y_test, params=None, save_path=None):
     # Evaluate model
     y_pred = model.predict(X_test)
     rmse = root_mean_squared_error(y_test, y_pred)
-    print(f"LightGBM RMSE: {rmse:.4f}")
     r2 = r2_score(y_test, y_pred)
+    print(f"LightGBM RMSE: {rmse:.4f}")
     print(f"R²: {r2:.4f}")
 
     # Save the model
     if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
         joblib.dump(model, save_path)
         print(f"Model saved to {save_path}")
 
@@ -42,13 +43,9 @@ def train_lgbm(X_train, y_train, X_test, y_test, params=None, save_path=None):
 def remove_low_importance_features(
     model, X_train, X_test, y_train, y_test, threshold=0.01, save_path=None
 ):
-    """
-    Removes features with SHAP importance values below the specified threshold,
-    retrains the model on the reduced feature set, and optionally saves it.
-    """
-    # Use the new SHAP API for explanation
+    # Use SHAP Explainer for feature importance
     explainer = shap.Explainer(model, X_train)
-    explanation = explainer(X_test, check_additivity=False)  # Compute SHAP values
+    explanation = explainer(X_test, check_additivity=False)
 
     # Calculate mean absolute SHAP values for each feature
     shap_importances = explanation.values.mean(axis=0)
@@ -61,28 +58,21 @@ def remove_low_importance_features(
         if importance < threshold
     ]
 
-    # Ensure at least one feature remains
     if len(low_importance_features) == len(X_train.columns):
         print(
-            "Warning: All features were marked as low importance. Retaining top features."
+            "Warning: All features marked as low importance. Retaining top 5 features."
         )
-        low_importance_features = low_importance_features[
-            :-1
-        ]  # Retain at least one feature
+        low_importance_features = feature_names[
+            (-shap_importances).argsort()[:5]
+        ].tolist()
 
     print(f"Removing features: {low_importance_features}")
 
-    # Drop low-importance features from training and test sets
+    # Drop low-importance features
     X_train_reduced = X_train.drop(columns=low_importance_features)
     X_test_reduced = X_test.drop(columns=low_importance_features)
 
-    # Verify the reduced dataset is valid
-    if X_train_reduced.shape[1] == 0:
-        raise ValueError(
-            "No features remain after feature removal. Adjust the threshold."
-        )
-
-    # Retrain the model on the reduced feature set
+    # Retrain the model on reduced features
     reduced_model, reduced_rmse = train_lgbm(
         X_train_reduced, y_train, X_test_reduced, y_test, save_path=save_path
     )
@@ -95,13 +85,13 @@ if __name__ == "__main__":
     df = pd.read_parquet(config.processed_file)
 
     # Split the dataset
-    X = df[continuous_columns]  # Feature set
-    y = df["close"]  # Target variable
+    X = df[continuous_columns]
+    y = df["close"]
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
 
-    # Check if the initial model is already saved
+    # Load or train the initial model
     try:
         lgbm_model = joblib.load(config.model_file)
         print(f"Loaded the initial model from {config.model_file}.")
@@ -110,20 +100,13 @@ if __name__ == "__main__":
         lgbm_model, initial_rmse = train_lgbm(
             X_train, y_train, X_test, y_test, save_path=config.model_file
         )
-        print(f"Initial model trained. RMSE: {initial_rmse:.4f}")
 
-    # Use SHAP Explainer for the loaded model
-    print("Generating SHAP values for feature importance...")
+    # Compute SHAP values and plot summary
     explainer = shap.Explainer(lgbm_model, X_train)
-
-    # Check for missing values in the test set
-    print("Missing values in X_test:", X_test.isnull().sum())
-    X_test = X_test.fillna(X_test.mean())
-
     shap_values = explainer(X_test, check_additivity=False)
     shap.summary_plot(shap_values, X_test)
 
-    # Remove low-importance features and retrain the reduced model
+    # Remove low-importance features and retrain
     reduced_model_path = os.path.join(
         config.model_dir, f"{config.model_type}_{config.symbol}_reduced.pkl"
     )
