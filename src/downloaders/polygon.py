@@ -4,10 +4,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 import time
-import sys
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from src.config_loader import config
+from ..config_loader import config
 
 load_dotenv()
 
@@ -76,15 +74,6 @@ def save_chunk_to_parquet(data, filename):
     print(f"Data saved to {filename}.")
 
 
-def get_last_saved_timestamp(filename):
-    if not os.path.exists(filename):
-        return None
-    df = pd.read_parquet(filename)
-    if df.empty:
-        return None
-    return df["timestamp"].max()
-
-
 def main():
     # Get the last saved timestamp or start from the default start date
     last_saved_timestamp = get_last_saved_timestamp(config.raw_file)
@@ -99,8 +88,15 @@ def main():
 
     call_count = 0
     start_time = time.time()
+    previous_start = None
 
     while current_start < END_DATE:
+        # Break if current_start hasn't moved since last iteration
+        if current_start == previous_start:
+            print("No progress in fetching; breaking loop.")
+            break
+        previous_start = current_start
+
         current_end = min(current_start + timedelta(days=CHUNK_DAYS), END_DATE)
         print(f"Fetching data from {current_start} to {current_end}...")
         try:
