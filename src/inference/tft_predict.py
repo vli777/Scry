@@ -1,3 +1,6 @@
+from datetime import datetime, timedelta, timezone
+import os
+from dotenv import load_dotenv
 import pandas as pd
 import torch
 from pytorch_forecasting import TimeSeriesDataSet
@@ -5,68 +8,12 @@ from pytorch_forecasting.models.temporal_fusion_transformer import (
     TemporalFusionTransformer,
 )
 
-from data_utils.incremental_features import calculate_features_incrementally
-from data_utils.incremental_data import fetch_current_data
-from data_utils.process_data import prepare_features
+load_dotenv()
+from ..config_loader import config
 
-
-def fetch_and_incremental_update(
-    feature_path: str,
-    scaler_path: str,
-    ticker: str = "SPY",
-    bearer_token: str = "your_bearer_token",
-    period_type: str = "day",
-    frequency_type: str = "minute",
-    frequency: int = 5,
-):
-    """
-    1) Load existing data from feature_path.
-    2) Identify last timestamp in the dataset.
-    3) Fetch new data from that timestamp to now, using the default 5-min bars
-       or custom intervals if provided.
-    4) Incrementally calculate rolling features.
-    5) Apply existing scaler (StandardScaler).
-
-    Returns a DataFrame (df_prepared) ready for modeling.
-    """
-    try:
-        df_features = pd.read_parquet(feature_path)
-    except FileNotFoundError:
-        df_features = pd.DataFrame(
-            columns=["timestamp", "open", "high", "low", "close", "volume"]
-        )
-
-    if not df_features.empty:
-        last_timestamp = df_features["timestamp"].max()
-    else:
-        # default to 2 years ago if no data
-        last_timestamp = pd.Timestamp.now() - pd.Timedelta(days=730)
-
-    df_new = fetch_current_data(
-        ticker=ticker,
-        start=last_timestamp,
-        bearer_token=bearer_token,
-        period_type=period_type,
-        frequency_type=frequency_type,
-        frequency=frequency,
-    )
-
-    if df_new.empty:
-        print("No new data available from the API.")
-        df_prepared, _ = prepare_features(
-            df_features, scaler_path=scaler_path, fit_scaler=False
-        )
-        return df_prepared
-
-    # Incrementally update features
-    df_combined = calculate_features_incrementally(df_features, df_new)
-
-    # Prepare features & apply scaling
-    df_prepared, _ = prepare_features(
-        df_combined, scaler_path=scaler_path, fit_scaler=False
-    )
-
-    return df_prepared
+from downloaders.utils.helpers import get_last_saved_timestamp
+from downloaders.schwab import fetch_data_schwab, save_to_parquet
+from preprocessing.process_data import prepare_features
 
 
 def build_tft_dataset(
@@ -100,7 +47,7 @@ def build_tft_dataset(
 
     # If group_id_col doesn't exist, create it
     if group_id_col not in df.columns:
-        df[group_id_col] = "SPY"
+        df[group_id_col] = "symbol"
 
     # Identify reals
     known_reals = known_reals or []
@@ -150,35 +97,65 @@ def predict_with_tft(
 
 
 def predict_close_price_tft(
-    ticker="SPY",
-    interval="5min",
-    model_path="models/tft_model.pth",
-    feature_path="data/processed/spy_features.parquet",
-    scaler_path="data/processed/scaler.pkl",
-    max_encoder_length=48,
-    max_prediction_length=12,
+    config, bearer_token, max_encoder_length=48, max_prediction_length=12
 ):
     """
-    High-level orchestrator that:
-    1) Fetches & increments updates
-    2) Builds TFT dataset
-    3) Predicts using TFT model (12 steps ahead).
+    Unified pipeline for:
+    - Fetching and appending data.
+    - Preprocessing and computing features.
+    - Building TFT dataset.
+    - Making predictions.
     """
-    df_prepared = fetch_and_incremental_update(
-        feature_path=feature_path,
-        scaler_path=scaler_path,
-        ticker=ticker,
-        interval=interval,
-        days=200,
+    # Paths from config
+    file_path = config.raw_file
+    scaler_path = config.scaler_file
+    model_path = config.model_file
+
+    # Load existing data and determine start date
+    last_saved_timestamp = get_last_saved_timestamp(file_path)
+    now = datetime.now(timezone.utc)
+    market_close_time = now.replace(hour=21, minute=0, second=0, microsecond=0)
+    effective_end_date = min(now, market_close_time)
+
+    start = (
+        last_saved_timestamp + timedelta(minutes=config.frequency)
+        if last_saved_timestamp
+        else config.start_date
     )
 
+    # Fetch new data
+    chunked_candles = fetch_data_schwab(
+        symbol=config.symbol,
+        bearer_token=bearer_token,
+        frequency_type=config.frequency_type,
+        frequency=config.frequency,
+        start_date=start,
+        end_date=effective_end_date,
+        max_chunk_days=10,
+    )
+    
+    # Save new data if available
+    if chunked_candles:
+        save_to_parquet(chunked_candles, file_path)
+    else:
+        print("No new data fetched. Proceeding with existing data.")
+    
+    # Preprocess data
+    df = pd.read_parquet(file_path)
+    df, scaler = prepare_features(df, scaler_path=scaler_path, fit_scaler=False)
+
+    # Ensure `time_idx` exists
+    if "time_idx" not in df.columns:
+        df = df.sort_values("timestamp").reset_index(drop=True)
+        df["time_idx"] = range(len(df))
+        
     known_reals = ["time_idx"]
-    all_cols = list(df_prepared.columns)
+    all_cols = list(df.columns)
     exclude_cols = {"timestamp", "symbol", "time_idx", "close"}  # 'close' is target
     unknown_reals = [col for col in all_cols if col not in exclude_cols]
 
     tft_dataset = build_tft_dataset(
-        df=df_prepared,
+        df=df,
         target="close",
         time_idx_col="time_idx",
         group_id_col="symbol",
@@ -193,13 +170,14 @@ def predict_close_price_tft(
 
 
 if __name__ == "__main__":
+    bearer_token = os.getenv("SCHWAB_BEARER_TOKEN")
+    if bearer_token is None:
+        raise ValueError("SCHWAB_BEARER_TOKEN environment variable not set")
+
     # We want to forecast 1 hour out on 5-min data => 12 steps
     pred_close = predict_close_price_tft(
-        ticker="SPY",
-        interval="5min",
-        model_path="models/tft_model.pth",
-        feature_path="data/processed/spy_features.parquet",
-        scaler_path="data/processed/scaler.pkl",
+        config,
+        bearer_token,
         max_encoder_length=48,  # see 48 past bars (4 hours) for context
         max_prediction_length=12,  # predict the next 12 bars => 1 hour total
     )
