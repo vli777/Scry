@@ -6,7 +6,9 @@ data/
 models/
 *.pkl
 *.parquet
+lightning_logs/
 
 __pycache__/
 
 .env
+
