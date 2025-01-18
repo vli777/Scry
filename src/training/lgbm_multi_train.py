@@ -8,7 +8,7 @@ import lightgbm as lgb
 from ..config_loader import config
 
 
-def train_lgbm_for_multi_step(df, steps=12, save_path=None):
+def train_lgbm_multi(df, steps=12, save_path=None):
     """
     Train a single LightGBM model to predict multiple steps simultaneously.
     Each target column represents one future step.
@@ -83,6 +83,6 @@ if __name__ == "__main__":
     )
 
     # Train a single LightGBM model for multi-step prediction
-    model = train_lgbm_for_multi_step(df, steps=12, save_path=multi_model_path)
+    model = train_lgbm_multi(df, steps=12, save_path=multi_model_path)
 
     print("Multi-step LightGBM training complete.")
