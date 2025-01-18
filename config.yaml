@@ -1,9 +1,11 @@
 # config.yaml
-symbol: "BKNG"
+symbol: "TLN"
 frequency: 5
 frequency_type: "minute"
+model_type: "lgbm"
 
 paths:
   raw_dir: "data/raw"
   processed_dir: "data/processed"
-  scaler_dir: "data/processed/scalers"
+  scaler_dir: "data/processed/scalers"  
+  model_dir: "models/"
