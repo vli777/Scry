@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import pytorch_forecasting
 import pytorch_lightning as pl
@@ -9,10 +10,12 @@ from pytorch_forecasting.models.temporal_fusion_transformer import (
 )
 from pytorch_forecasting.data import DataLoader
 
+from ..config_loader import config
+
 
 def train_tft(
-    data_path="data/processed/SPY_5min_processed.parquet",
-    model_path="models/tft_model.pth",
+    data_path,
+    model_path,
     max_encoder_length=48,
     max_prediction_length=12,
     batch_size=64,
@@ -33,9 +36,9 @@ def train_tft(
     if "time_idx" not in df.columns:
         df["time_idx"] = range(len(df))  # each row increments by 1
 
-    # 4) Create a 'symbol' column (since we have only SPY, make it constant)
+    # 4) Create a 'symbol' column
     if "symbol" not in df.columns:
-        df["symbol"] = "SPY"
+        df["symbol"] = "symbol"
 
     # 5) Identify which columns to treat as unknown reals
     #    We'll treat 'close' as our target, so exclude it from unknown reals.
@@ -108,8 +111,8 @@ def train_tft(
 
 if __name__ == "__main__":
     train_tft(
-        data_path="data/processed/SPY_5min_processed.parquet",
-        model_path="models/tft_model.pth",
+        data_path=config.processed_file,
+        model_path=config.model_file,
         max_encoder_length=48,
         max_prediction_length=12,
         batch_size=64,
