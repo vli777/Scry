@@ -1,14 +1,16 @@
-import os
 import pandas as pd
 import pytorch_forecasting
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 import torch
-
-from pytorch_forecasting import TimeSeriesDataSet
-from pytorch_forecasting.models.temporal_fusion_transformer import (
-    TemporalFusionTransformer,
+torch.set_float32_matmul_precision('medium')
+from lightning.pytorch.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
+from lightning.pytorch.loggers import TensorBoardLogger
+from pytorch_forecasting import MAE, TimeSeriesDataSet, TemporalFusionTransformer
+from pytorch_forecasting.models.temporal_fusion_transformer.tuning import (
+    optimize_hyperparameters,
 )
-from pytorch_forecasting.data import DataLoader
+import pickle
+from lightning.pytorch.tuner import Tuner
 
 from src.config_loader import config
 
@@ -54,7 +56,7 @@ def train_tft(
 
     print(f"Training data: {len(train_df)}, Validation data: {len(val_df)}")
 
-    # 4) Build TimeSeriesDataSet
+    # 4) Build training and validation datasets
     training = TimeSeriesDataSet(
         train_df,
         time_idx="time_idx",
@@ -64,20 +66,41 @@ def train_tft(
         max_prediction_length=max_prediction_length,
         time_varying_unknown_reals=unknown_reals,
         target_normalizer=None,
+        add_relative_time_idx = True
     )
+
     validation = TimeSeriesDataSet.from_dataset(
         training, val_df, stop_randomization=True
     )
 
     # 5) Create dataloaders
-    train_loader = training.to_dataloader(
-        train=True, batch_size=batch_size, shuffle=True
-    )
-    val_loader = validation.to_dataloader(
-        train=False, batch_size=batch_size, shuffle=False
-    )
+    train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=2)
+    val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size, num_workers=2)
 
-    # 6) Define TFT model
+    # 6) Configure network and trainer
+    pl.seed_everything(42)
+    early_stop_callback = EarlyStopping(
+        monitor="val_loss", min_delta=1e-4, patience=10, verbose=False, mode="min"
+    )
+    lr_logger = LearningRateMonitor()  # log the learning rate
+    logger = TensorBoardLogger("lightning_logs")  # logging results to a tensorboard
+
+    trainer = pl.Trainer(
+        accelerator=(
+            "gpu" if torch.cuda.is_available() else "cpu"
+        ),  # Automatically selects GPU or CPU
+        max_epochs=max_epochs,  # Your desired maximum epochs
+        gradient_clip_val=0.1,  # Gradient clipping
+        logger=logger,  # Set True to use the default logger
+        enable_checkpointing=True,  # Enable checkpointing
+        callbacks=[
+            lr_logger,
+            early_stop_callback,
+        ],  
+    )
+    print("Starting training...")
+
+    # 7) Define TFT model
     print("Initializing Temporal Fusion Transformer...")
     tft = TemporalFusionTransformer.from_dataset(
         training,
@@ -92,21 +115,51 @@ def train_tft(
 
     print(f"Number of parameters in the model: {tft.size()/1e3:.1f}k")
 
-    # 7) Train the model
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    trainer = pl.Trainer(
-        max_epochs=max_epochs,
-        gpus=1 if device.type == "cuda" else 0,
-        gradient_clip_val=0.1,
-    )
-    print("Starting training...")
-    trainer.fit(tft, train_dataloaders=train_loader, val_dataloaders=val_loader)
-
-    # 8) Save the best model
-    trainer.save_checkpoint(model_path)
+    # 8) Fit model network
+    trainer.fit(tft, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
     print(f"Training complete. Model saved to {model_path}")
 
+    # 9) Hyperparameter tuning with Optuna
+    study = optimize_hyperparameters(
+        train_dataloader,
+        val_dataloader,
+        model_path="optuna",
+        n_trials=100,
+        max_epochs=max_epochs,
+        gradient_clip_val_range=(0.01, 1.0),
+        hidden_size_range=(8, 128),
+        hidden_continuous_size_range=(8, 128),
+        attention_head_size_range=(1, 4),
+        learning_rate_range=(0.001, 0.1),
+        dropout_range=(0.1, 0.3),
+        trainer_kwargs=dict(limit_train_batches=30),
+        reduce_on_plateau_patience=4,
+        use_learning_rate_finder=False,  # use Optuna to find ideal learning rate or use in-built learning rate finder
+    )
 
+    # save study results - also we can resume tuning at a later point in time
+    with open("test_study.pkl", "wb") as fout:
+        pickle.dump(study, fout)
+
+    # show best hyperparameters
+    print(study.best_trial.params)
+
+    # 10) Evaluate performance
+    # load the best model according to the validation loss
+    best_model_path = trainer.checkpoint_callback.best_model_path
+    best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
+    predictions = best_tft.predict(val_dataloader, return_y=True, trainer_kwargs=dict(accelerator="cpu"))
+    MAE()(predictions.output, predictions.y)
+    
+    # raw predictions are a dictionary from which all kind of information including quantiles can be extracted
+    raw_predictions = best_tft.predict(val_dataloader, mode="raw", return_x=True)
+    predictions = best_tft.predict(val_dataloader, return_x=True)
+    predictions_vs_actuals = best_tft.calculate_prediction_actual_by_variable(predictions.x, predictions.output)
+    best_tft.plot_prediction_actual_by_variable(predictions_vs_actuals)  
+    
+    interpretation = best_tft.interpret_output(raw_predictions.output, reduction="sum")
+    best_tft.plot_interpretation(interpretation)
+    
 if __name__ == "__main__":
     train_tft(
         data_path=config.processed_file,
