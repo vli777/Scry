@@ -8,8 +8,6 @@ import joblib
 
 from ..config_loader import config
 
-from preprocessing.process_data import continuous_columns
-
 
 def train_lgbm(X_train, y_train, X_test, y_test, params=None, save_path=None):
     if params is None:
@@ -17,7 +15,6 @@ def train_lgbm(X_train, y_train, X_test, y_test, params=None, save_path=None):
             "random_state": 42,
             "n_estimators": 100,
             "learning_rate": 0.1,
-            "device": "cpu",
         }
 
     # Train LightGBM model
@@ -43,36 +40,24 @@ def train_lgbm(X_train, y_train, X_test, y_test, params=None, save_path=None):
 def remove_low_importance_features(
     model, X_train, X_test, y_train, y_test, threshold=0.01, save_path=None
 ):
-    # Use SHAP Explainer for feature importance
     explainer = shap.Explainer(model, X_train)
     explanation = explainer(X_test, check_additivity=False)
-
-    # Calculate mean absolute SHAP values for each feature
     shap_importances = explanation.values.mean(axis=0)
     feature_names = X_train.columns
 
-    # Identify low-importance features
     low_importance_features = [
         feature_names[i]
         for i, importance in enumerate(shap_importances)
         if importance < threshold
     ]
 
-    if len(low_importance_features) == len(X_train.columns):
-        print(
-            "Warning: All features marked as low importance. Retaining top 5 features."
-        )
-        low_importance_features = feature_names[
-            (-shap_importances).argsort()[:5]
-        ].tolist()
+    if len(X_train.columns) - len(low_importance_features) < 5:
+        low_importance_features = low_importance_features[: len(X_train.columns) - 5]
 
     print(f"Removing features: {low_importance_features}")
-
-    # Drop low-importance features
     X_train_reduced = X_train.drop(columns=low_importance_features)
     X_test_reduced = X_test.drop(columns=low_importance_features)
 
-    # Retrain the model on reduced features
     reduced_model, reduced_rmse = train_lgbm(
         X_train_reduced, y_train, X_test_reduced, y_test, save_path=save_path
     )
@@ -84,9 +69,11 @@ if __name__ == "__main__":
     # Load processed data
     df = pd.read_parquet(config.processed_file)
 
-    # Split the dataset
-    X = df[continuous_columns]
+    # Extract features and target
+    X = df[config.continuous_columns]
     y = df["close"]
+
+    # Split the dataset
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
@@ -112,13 +99,7 @@ if __name__ == "__main__":
     )
     lgbm_model_reduced, X_train_reduced, X_test_reduced = (
         remove_low_importance_features(
-            lgbm_model,
-            X_train,
-            X_test,
-            y_train,
-            y_test,
-            save_path=reduced_model_path,
+            lgbm_model, X_train, X_test, y_train, y_test, save_path=reduced_model_path
         )
     )
-
     print(f"Reduced model saved to {reduced_model_path}.")
