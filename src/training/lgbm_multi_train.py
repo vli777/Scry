@@ -77,7 +77,12 @@ if __name__ == "__main__":
     # Prepare multi-step targets
     df = prepare_multi_step_targets(df, steps=12)
 
+    # Generate dynamic model path
+    multi_model_path = os.path.join(
+        config.model_dir, f"{config.model_type}_{config.symbol}_multi.pkl"
+    )
+
     # Train a single LightGBM model for multi-step prediction
-    model = train_lgbm_for_multi_step(df, steps=12, save_path=config.model_file)
+    model = train_lgbm_for_multi_step(df, steps=12, save_path=multi_model_path)
 
     print("Multi-step LightGBM training complete.")
