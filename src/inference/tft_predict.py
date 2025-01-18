@@ -2,7 +2,6 @@ from datetime import datetime, timedelta, timezone
 import os
 from dotenv import load_dotenv
 import pandas as pd
-import torch
 from pytorch_forecasting import TimeSeriesDataSet
 from pytorch_forecasting.models.temporal_fusion_transformer import (
     TemporalFusionTransformer,
@@ -75,22 +74,20 @@ def predict_with_tft(
     """
     # Create dataloader
     inference_dataloader = tft_dataset.to_dataloader(
-        train=False, batch_size=batch_size, shuffle=False
+        train=False, batch_size=batch_size, num_workers=8
     )
 
     # Load TFT model
     tft_model = TemporalFusionTransformer.load_from_checkpoint(model_path)
     tft_model.eval()
 
-    with torch.no_grad():
-        raw_predictions = tft_model.predict(inference_dataloader)
-        # shape is (batch_size, max_prediction_length) => (batch_size, 12)
+    # Generate predictions
+    raw_predictions = tft_model.predict(inference_dataloader, mode="raw")
 
-        # We want the 12th step (index 11) from the *last* batch entry
-        # raw_predictions[-1, 11] => final step of the last sample in the batch
-        pred_value = raw_predictions[-1, -1].item()
+    # Convert to NumPy for easier manipulation (optional)
+    all_predictions = raw_predictions.numpy()
 
-    return pred_value
+    return all_predictions
 
 
 def predict_close_price_tft(
@@ -179,4 +176,13 @@ if __name__ == "__main__":
         max_encoder_length=48,  # see 48 past bars (4 hours) for context
         max_prediction_length=12,  # predict the next 12 bars => 1 hour total
     )
-    print(f"Predicted close in 1 hour: {pred_close:.4f}")
+
+    # Format predictions for printing
+    formatted_predictions = [
+        [f"{value:.3f}" for value in prediction] for prediction in pred_close
+    ]
+
+    print(f"Predicted multi-step close for 1 hr:")
+    for i, prediction in enumerate(formatted_predictions):
+        formatted = ", ".join(prediction)
+        print(f"Sample {i + 1}: {formatted}")
