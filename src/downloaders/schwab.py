@@ -3,10 +3,10 @@ from dotenv import load_dotenv
 import requests
 import pandas as pd
 from datetime import datetime, timedelta, timezone
-import sys
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from src.config_loader import config
+from ..config_loader import config
+
+from downloaders.utils.helpers import get_last_saved_timestamp
 
 load_dotenv()
 
@@ -150,19 +150,6 @@ def _fetch_chunked_schwab(
             print(f"Skipping to next chunk, new start: {current_start.isoformat()}")
 
     return all_candles
-
-
-def get_last_saved_timestamp(filename):
-    if not os.path.exists(filename):
-        return None
-    df = pd.read_parquet(filename)
-    if df.empty:
-        return None
-    ts = df["timestamp"].max()
-    # Localize to UTC if timestamp is naive
-    if ts.tzinfo is None:
-        ts = ts.tz_localize("UTC")
-    return ts
 
 
 def save_to_parquet(candles, filename):
