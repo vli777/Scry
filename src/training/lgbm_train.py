@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import lightgbm as lgb
 from sklearn.model_selection import train_test_split
@@ -5,18 +6,9 @@ from sklearn.metrics import root_mean_squared_error, r2_score
 import shap
 import joblib
 
-from data_utils.process_data import continuous_columns
+from ..config_loader import config
 
-# Load processed data
-FILE_PATH = "data/processed/SPY_5min_processed.parquet"
-df = pd.read_parquet(FILE_PATH)
-
-# Split the dataset
-X = df[continuous_columns]  # Feature set
-y = df["close"]  # Target variable
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
-)
+from preprocessing.process_data import continuous_columns
 
 
 def train_lgbm(X_train, y_train, X_test, y_test, params=None, save_path=None):
@@ -99,31 +91,42 @@ def remove_low_importance_features(
 
 
 if __name__ == "__main__":
+    # Load processed data
+    df = pd.read_parquet(config.processed_file)
+
+    # Split the dataset
+    X = df[continuous_columns]  # Feature set
+    y = df["close"]  # Target variable
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+
     # Check if the initial model is already saved
-    MODEL_PATH = "models/lgbm_model.pkl"
     try:
-        lgbm_model = joblib.load(MODEL_PATH)
-        print("Loaded the initial model from disk.")
+        lgbm_model = joblib.load(config.model_file)
+        print(f"Loaded the initial model from {config.model_file}.")
     except FileNotFoundError:
         print("Initial model not found. Training a new one.")
         lgbm_model, initial_rmse = train_lgbm(
-            X_train, y_train, X_test, y_test, save_path=MODEL_PATH
+            X_train, y_train, X_test, y_test, save_path=config.model_file
         )
+        print(f"Initial model trained. RMSE: {initial_rmse:.4f}")
 
-    # Use TreeExplainer for the loaded model
-    explainer = shap.Explainer(
-        lgbm_model, X_train
-    )  # Assuming X_train is available in your scope
+    # Use SHAP Explainer for the loaded model
+    print("Generating SHAP values for feature importance...")
+    explainer = shap.Explainer(lgbm_model, X_train)
+
     # Check for missing values in the test set
-    print(X_test.isnull().sum())
-    X_test.fillna(X_test.mean(), inplace=True)
+    print("Missing values in X_test:", X_test.isnull().sum())
+    X_test = X_test.fillna(X_test.mean())
 
-    shap_values = explainer(
-        X_test, check_additivity=False
-    )  # Generate SHAP values for the test set
-    shap.summary_plot(shap_values)
+    shap_values = explainer(X_test, check_additivity=False)
+    shap.summary_plot(shap_values, X_test)
 
     # Remove low-importance features and retrain the reduced model
+    reduced_model_path = os.path.join(
+        config.model_dir, f"{config.model_type}_{config.symbol}_reduced.pkl"
+    )
     lgbm_model_reduced, X_train_reduced, X_test_reduced = (
         remove_low_importance_features(
             lgbm_model,
@@ -131,6 +134,8 @@ if __name__ == "__main__":
             X_test,
             y_train,
             y_test,
-            save_path="models/lgbm_model_reduced.pkl",
+            save_path=reduced_model_path,
         )
     )
+
+    print(f"Reduced model saved to {reduced_model_path}.")
