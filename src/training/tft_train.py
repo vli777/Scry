@@ -102,7 +102,6 @@ def train_tft(
             lr_logger,
             early_stop_callback,
         ],
-        ckpt_path="last",
     )
     print("Starting training...")
 
