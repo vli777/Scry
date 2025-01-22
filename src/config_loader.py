@@ -40,9 +40,7 @@ class Config:
     def get_model_file(self):
         if self.model_type == "lgbm":
             return os.path.join(self.model_dir, f"{self.model_type}_{self.symbol}.pkl")
-        elif self.model_type == "tft":
-            if self.epoch is None:
-                raise ValueError("For TFT, 'epoch' must be provided.")
+        elif self.model_type == "tft":            
             return os.path.join(self.model_dir, f"tft_{self.symbol}.ckpt")
         else:
             raise ValueError(f"Unsupported model type: {self.model_type}")
