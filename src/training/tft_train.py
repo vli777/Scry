@@ -5,6 +5,7 @@ import torch
 
 torch.set_float32_matmul_precision("medium")
 from lightning.pytorch.callbacks import (
+    ModelCheckpoint,
     EarlyStopping,
     LearningRateMonitor,
 )
@@ -77,10 +78,10 @@ def train_tft(
 
     # 5) Create dataloaders
     train_dataloader = training.to_dataloader(
-        train=True, batch_size=batch_size, num_workers=8
+        train=True, batch_size=batch_size, num_workers=8, persistent_workers=True
     )
     val_dataloader = validation.to_dataloader(
-        train=False, batch_size=batch_size, num_workers=8
+        train=False, batch_size=batch_size, num_workers=8, persistent_workers=True
     )
 
     # 6) Configure network and trainer
@@ -90,6 +91,15 @@ def train_tft(
     )
     lr_logger = LearningRateMonitor()  # log the learning rate
 
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=config.model_dir,  # set your desired directory
+        filename=f"tft_{config.symbol}",  # optional: customize filename format
+        monitor="val_loss",  # optional: metric to monitor
+        mode="min",  # optional: "min" or "max" based on the metric
+        save_top_k=1,  # optional: how many best models to keep
+        save_last=True,  # save latest checkpoint
+    )
+
     trainer = pl.Trainer(
         accelerator=(
             "gpu" if torch.cuda.is_available() else "cpu"
@@ -98,10 +108,7 @@ def train_tft(
         gradient_clip_val=0.1,  # Gradient clipping
         logger=True,  # Set True to use the default logger
         enable_checkpointing=True,  # Enable checkpointing
-        callbacks=[
-            lr_logger,
-            early_stop_callback,
-        ],
+        callbacks=[lr_logger, early_stop_callback, checkpoint_callback],
     )
     print("Starting training...")
 

@@ -1,8 +1,8 @@
 # config.yaml
-symbol: "TLN"
+symbol: "SPY"
 frequency: 5
 frequency_type: "minute"
-model_type: "lgbm"
+model_type: "tft"
 
 paths:
   raw_dir: "data/raw"
