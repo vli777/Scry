@@ -1,15 +1,22 @@
 from datetime import datetime, timedelta, timezone
 import os
+from time import time
 from dotenv import load_dotenv
+import joblib
+import numpy as np
 import pandas as pd
 from pytorch_forecasting import TimeSeriesDataSet
 from pytorch_forecasting.models.temporal_fusion_transformer import (
     TemporalFusionTransformer,
 )
+import torch
+from tqdm import tqdm
 from src.config_loader import config
 from src.downloaders.utils.helpers import get_last_saved_timestamp
 from src.downloaders.schwab import fetch_data_schwab, save_to_parquet
 from src.preprocessing.process_data import prepare_features
+
+torch.set_float32_matmul_precision("medium")
 
 
 def build_tft_dataset(
@@ -66,12 +73,10 @@ def build_tft_dataset(
 
 def predict_with_tft(
     tft_dataset: TimeSeriesDataSet, model_path: str, batch_size: int = 1
-) -> float:
-    """
-    1) Loads the TFT model from a checkpoint.
-    2) Creates a dataloader from tft_dataset.
-    3) Generates predictions and returns the final forecast step (the 12th prediction).
-    """
+) -> np.ndarray:
+    # Determine device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     # Create dataloader
     inference_dataloader = tft_dataset.to_dataloader(
         train=False, batch_size=batch_size, num_workers=8
@@ -81,12 +86,28 @@ def predict_with_tft(
     tft_model = TemporalFusionTransformer.load_from_checkpoint(model_path)
     tft_model.eval()
 
-    # Generate predictions
-    raw_predictions = tft_model.predict(inference_dataloader, mode="raw")
+    predictions = []
+    # Wrap the dataloader with tqdm for progress indication
+    for batch in tqdm(inference_dataloader, desc="Predicting"):
+        # Unpack batch: typically (x, y)
+        if isinstance(batch, (list, tuple)):
+            x, _ = batch
+        else:
+            x = batch
 
-    # Convert to NumPy for easier manipulation (optional)
-    all_predictions = raw_predictions.numpy()
+        # Move each tensor in the input dict to the target device
+        if isinstance(x, dict):
+            x = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in x.items()}
+        elif torch.is_tensor(x):
+            x = x.to(device)
 
+        # Call model’s forward directly without 'mode'
+        out = tft_model(x)
+        # Collect predictions from output dictionary
+        predictions.append(out["prediction"].detach().cpu().numpy())
+
+    # Concatenate all batch predictions
+    all_predictions = np.concatenate(predictions, axis=0)
     return all_predictions
 
 
@@ -159,8 +180,11 @@ def predict_close_price_tft(
         unknown_reals=unknown_reals,
     )
 
-    pred_value = predict_with_tft(tft_dataset, model_path=model_path)
-    return pred_value
+    start_time = time()
+    predictions = predict_with_tft(tft_dataset, model_path=model_path)
+    end_time = time()
+    print(f"Inference took {end_time - start_time:.2f} seconds.")
+    return predictions
 
 
 if __name__ == "__main__":
@@ -177,12 +201,25 @@ if __name__ == "__main__":
         max_prediction_length=12,  # predict the next 12 bars => 1 hour total
     )
 
-    # Format predictions for printing
-    formatted_predictions = [
-        [f"{value:.3f}" for value in prediction] for prediction in pred_close
-    ]
+    # Ensure pred_close is 2D with shape (samples, steps)
+    pred_close = np.array(pred_close).squeeze()
 
-    print(f"Predicted multi-step close for 1 hr:")
-    for i, prediction in enumerate(formatted_predictions):
-        formatted = ", ".join(prediction)
-        print(f"Sample {i + 1}: {formatted}")
+    print(type(pred_close), pred_close.shape)
+    print(
+        type(pred_close[0]),
+        pred_close[0].shape if hasattr(pred_close[0], "shape") else None,
+    )
+
+    # Get the last prediction sequence (assuming shape: [num_samples, forecast_steps])
+    latest_prediction = pred_close[-1]
+
+    # load scaler to restore original price scale
+    scaler = joblib.load(config.scaler_path)
+
+    scaled_prediction = latest_prediction.reshape(-1, 1)  # shape becomes (12, 1)
+    original_prediction = scaler.inverse_transform(scaled_prediction)
+    original_prediction = original_prediction.flatten()  # shape (12,)
+
+    formatted_original = [f"{price:.3f}" for price in original_prediction]
+    print("Predicted multi-step close for next 1 hr (original scale):")
+    print(", ".join(formatted_original))
