@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 
 from src.config_loader import config
-from src.downloaders.utils.helpers import get_last_saved_timestamp
+from src.downloaders.utils.helpers import get_last_saved_timestamp, is_market_open
 
 load_dotenv(override=True)
 
@@ -35,6 +35,12 @@ def fetch_data_schwab(
       it chunks by max_chunk_days internally.
     - Returns a combined list of candles.
     """
+    # Check if the market is open
+    current_time = datetime.now(timezone.utc)
+    if not is_market_open(current_time, market_timezone='US/Eastern'):
+        print("Market is currently closed. Skipping data fetch.")
+        return []  # Return empty list or handle as appropriate
+    
     if period_type and period and not start_date and not end_date:
         # === Single fetch based on period ===
         params = {
@@ -151,35 +157,31 @@ def _fetch_chunked_schwab(
     return all_candles
 
 
-def save_to_parquet(candles, filename):
-    if not candles:
-        print("No data to save.")
-        return
-
-    # Convert the list of candles to a DataFrame and ensure UTC-aware timestamps
-    df = pd.DataFrame(candles)
-    df["timestamp"] = pd.to_datetime(df["datetime"], unit="ms", utc=True)
-    df = df[["timestamp", "open", "high", "low", "close", "volume"]]
-
+def save_to_parquet(df, filename):
+    """
+    Saves the preprocessed DataFrame to a Parquet file, appending to existing data and removing duplicates.
+    
+    Args:
+        df (pd.DataFrame): The preprocessed DataFrame to save.
+        filename (str): Path to the Parquet file.
+    """
     if os.path.exists(filename):
         existing_data = pd.read_parquet(filename)
-        # Ensure existing data timestamps are UTC-aware
-        existing_data["timestamp"] = pd.to_datetime(
-            existing_data["timestamp"], utc=True
-        )
-        existing_data = existing_data[
-            ["timestamp", "open", "high", "low", "close", "volume"]
-        ]
+        
+        # Ensure timestamps are consistent
+        existing_data["timestamp"] = pd.to_datetime(existing_data["timestamp"], utc=True)
+        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
 
-        # Combine old and new data
+        # Concatenate new and existing data
         df = pd.concat([existing_data, df], ignore_index=True)
 
-    # Remove duplicates based on timestamp
+    # Remove duplicate rows based on the timestamp
     df.drop_duplicates(subset=["timestamp"], inplace=True)
 
-    # Save the complete DataFrame to Parquet
+    # Save back to Parquet
     df.to_parquet(filename, engine="pyarrow", compression="snappy", index=False)
-    print(f"Data saved to {filename}.")
+    print(f"Processed data saved to {filename}.")
+
 
 
 def main():
