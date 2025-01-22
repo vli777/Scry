@@ -79,7 +79,7 @@ def predict_with_tft(
 
     # Create dataloader
     inference_dataloader = tft_dataset.to_dataloader(
-        train=False, batch_size=batch_size, num_workers=8
+        train=False, batch_size=batch_size, num_workers=16
     )
 
     # Load TFT model
@@ -123,6 +123,7 @@ def predict_close_price_tft(
     """
     # Paths from config
     file_path = config.raw_file
+    processed_file_path = config.processed_file
     scaler_path = config.scaler_file
     model_path = config.model_file
 
@@ -159,6 +160,10 @@ def predict_close_price_tft(
     df = pd.read_parquet(file_path)
     df, scaler = prepare_features(df, scaler_path=scaler_path, fit_scaler=False)
 
+    # Save the updated data
+    save_to_parquet(df, processed_file_path)
+    print(f"Updated DataFrame saved to {processed_file_path}.")
+    
     # Ensure `time_idx` exists
     if "time_idx" not in df.columns:
         df = df.sort_values("timestamp").reset_index(drop=True)
@@ -214,7 +219,7 @@ if __name__ == "__main__":
     latest_prediction = pred_close[-1]
 
     # load scaler to restore original price scale
-    scaler = joblib.load(config.scaler_path)
+    scaler = joblib.load(config.scaler_file)
 
     scaled_prediction = latest_prediction.reshape(-1, 1)  # shape becomes (12, 1)
     original_prediction = scaler.inverse_transform(scaled_prediction)
