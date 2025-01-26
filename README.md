@@ -1,6 +1,6 @@
-# Scry
+# Scry (WIP)
 A time-series forecasting pipeline with LGBM, Temporal Fusion Transformer (TFT)
-WIP
+
 
 ## Table of Contents
 - Installation
