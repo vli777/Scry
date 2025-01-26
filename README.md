@@ -1,5 +1,6 @@
 # Scry
-A time-series forecasting pipeline using a Temporal Fusion Transformer (TFT) to predict the next 1 hour of stock price movement
+A time-series forecasting pipeline with LGBM, Temporal Fusion Transformer (TFT)
+WIP
 
 ## Table of Contents
 - Installation
