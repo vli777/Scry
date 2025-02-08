@@ -1,6 +1,7 @@
-# Scry (WIP)
+# Scry 
 Time series forecasting with Temporal Fusion Transformers (TFT)
 
+This project is not currently being developed and will be rebuilt with a new model architecture, data features, integrated into the Vesta portfolio project.
 
 ## Table of Contents
 - Installation
