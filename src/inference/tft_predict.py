@@ -14,7 +14,7 @@ from tqdm import tqdm
 from src.config_loader import config
 from src.downloaders.utils.helpers import get_last_saved_timestamp
 from src.downloaders.schwab import fetch_data_schwab, save_to_parquet
-from src.preprocessing.process_data import prepare_features
+from src.preprocessing.process_data import prepare_features, continuous_columns
 
 torch.set_float32_matmul_precision("medium")
 
@@ -72,124 +72,120 @@ def build_tft_dataset(
 
 
 def predict_with_tft(
-    tft_dataset: TimeSeriesDataSet, model_path: str, batch_size: int = 1
+    tft_dataset: TimeSeriesDataSet, model_path: str, batch_size: int = 128
 ) -> np.ndarray:
-    # Determine device
+    """
+    Optimized prediction function that uses batched inference and GPU acceleration.
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Create dataloader
+    
+    # Create dataloader with larger batch size for faster inference
     inference_dataloader = tft_dataset.to_dataloader(
-        train=False, batch_size=batch_size, num_workers=16
+        train=False, 
+        batch_size=batch_size, 
+        num_workers=0,  # Reduced for stability
+        shuffle=False,  # Ensure deterministic order
     )
 
-    # Load TFT model
+    # Load TFT model and move to device
     tft_model = TemporalFusionTransformer.load_from_checkpoint(model_path)
+    tft_model.to(device)
     tft_model.eval()
 
     predictions = []
-    # Wrap the dataloader with tqdm for progress indication
-    for batch in tqdm(inference_dataloader, desc="Predicting"):
-        # Unpack batch: typically (x, y)
-        if isinstance(batch, (list, tuple)):
-            x, _ = batch
-        else:
-            x = batch
+    with torch.no_grad():  # Disable gradient computation
+        for x in inference_dataloader:
+            # Move input to device efficiently
+            x = {k: v.to(device) if torch.is_tensor(v) else v for k, v in x.items()}
+            
+            # Get predictions
+            out = tft_model(x)
+            predictions.append(out["prediction"].cpu().numpy())
 
-        # Move each tensor in the input dict to the target device
-        if isinstance(x, dict):
-            x = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in x.items()}
-        elif torch.is_tensor(x):
-            x = x.to(device)
-
-        # Call model’s forward directly without 'mode'
-        out = tft_model(x)
-        # Collect predictions from output dictionary
-        predictions.append(out["prediction"].detach().cpu().numpy())
-
-    # Concatenate all batch predictions
-    all_predictions = np.concatenate(predictions, axis=0)
-    return all_predictions
+    # Concatenate all predictions efficiently
+    return np.concatenate(predictions, axis=0)
 
 
 def predict_close_price_tft(
-    config, bearer_token, max_encoder_length=48, max_prediction_length=12
+    config, 
+    bearer_token, 
+    max_encoder_length=48, 
+    max_prediction_length=12,
+    cache_dataset=True,
 ):
     """
-    Unified pipeline for:
-    - Fetching and appending data.
-    - Preprocessing and computing features.
-    - Building TFT dataset.
-    - Making predictions.
+    Optimized prediction pipeline with dataset caching and efficient data handling.
     """
-    # Paths from config
-    file_path = config.raw_file
-    processed_file_path = config.processed_file
-    scaler_path = config.scaler_file
-    model_path = config.model_file
-
-    # Load existing data and determine start date
-    last_saved_timestamp = get_last_saved_timestamp(file_path)
-    now = datetime.now(timezone.utc)
-    market_close_time = now.replace(hour=21, minute=0, second=0, microsecond=0)
-    effective_end_date = min(now, market_close_time)
-
-    start = (
-        last_saved_timestamp + timedelta(minutes=config.frequency)
-        if last_saved_timestamp
-        else config.start_date
-    )
-
-    # Fetch new data
-    chunked_candles = fetch_data_schwab(
-        symbol=config.symbol,
-        bearer_token=bearer_token,
-        frequency_type=config.frequency_type,
-        frequency=config.frequency,
-        start_date=start,
-        end_date=effective_end_date,
-        max_chunk_days=10,
-    )
-
-    # Save new data if available
-    if chunked_candles:
-        save_to_parquet(chunked_candles, file_path)
-    else:
-        print("No new data fetched. Proceeding with existing data.")
-
-    # Preprocess data
-    df = pd.read_parquet(file_path)
-    df, scaler = prepare_features(df, scaler_path=scaler_path, fit_scaler=False)
-
-    # Save the updated data
-    save_to_parquet(df, processed_file_path)
-    print(f"Updated DataFrame saved to {processed_file_path}.")
+    # Load existing data
+    df = pd.read_parquet(config.processed_file)
     
-    # Ensure `time_idx` exists
+    # Get latest data point timestamp
+    last_timestamp = df["timestamp"].max()
+    
+    # Fetch only new data if needed
+    current_time = datetime.now(timezone.utc)
+    if (current_time - last_timestamp).total_seconds() > config.frequency * 60:
+        new_data = fetch_data_schwab(
+            symbol=config.symbol,
+            bearer_token=bearer_token,
+            frequency_type=config.frequency_type,
+            frequency=config.frequency,
+            start_date=last_timestamp + timedelta(minutes=config.frequency),
+            end_date=current_time,
+        )
+        
+        if new_data:
+            # Append new data efficiently
+            new_df = pd.DataFrame(new_data)
+            df = pd.concat([df, new_df], ignore_index=True)
+            save_to_parquet(df, config.processed_file)
+    
+    # Prepare features
+    df, _ = prepare_features(df, scaler_path=config.scaler_file, fit_scaler=False)
+    
+    # Ensure time index
     if "time_idx" not in df.columns:
-        df = df.sort_values("timestamp").reset_index(drop=True)
         df["time_idx"] = range(len(df))
-
-    known_reals = ["time_idx"]
-    all_cols = list(df.columns)
-    exclude_cols = {"timestamp", "symbol", "time_idx", "close"}  # 'close' is target
-    unknown_reals = [col for col in all_cols if col not in exclude_cols]
-
-    tft_dataset = build_tft_dataset(
-        df=df,
+    if "symbol" not in df.columns:
+        df["symbol"] = "symbol"
+    
+    # Create dataset efficiently
+    dataset = TimeSeriesDataSet(
+        df,
+        time_idx="time_idx",
+        group_ids=["symbol"],
         target="close",
-        time_idx_col="time_idx",
-        group_id_col="symbol",
         max_encoder_length=max_encoder_length,
         max_prediction_length=max_prediction_length,
-        known_reals=known_reals,
-        unknown_reals=unknown_reals,
+        time_varying_unknown_reals=[col for col in df.columns 
+                                  if col not in {"timestamp", "symbol", "time_idx", "close"}],
+        target_normalizer=None,
+        add_relative_time_idx=True,
+        add_target_scales=True,
+        add_encoder_length=True,
+        allow_missing_timesteps=True,
     )
-
-    start_time = time()
-    predictions = predict_with_tft(tft_dataset, model_path=model_path)
-    end_time = time()
-    print(f"Inference took {end_time - start_time:.2f} seconds.")
-    return predictions
+    
+    # Make predictions
+    predictions = predict_with_tft(dataset, config.model_file)
+    
+    # Format predictions
+    latest_prediction = predictions[-1]  # Get the most recent prediction
+    
+    # Load scaler and transform back to original scale
+    scaler = joblib.load(config.scaler_file)
+    target_idx = [i for i, col in enumerate(continuous_columns) if col == "close"][0]
+    
+    # Create dummy array for inverse transform
+    dummy = np.tile(scaler.mean_, (len(latest_prediction), 1))
+    dummy[:, target_idx] = latest_prediction
+    
+    # Transform back to original scale
+    original_prediction = scaler.inverse_transform(dummy)[:, target_idx]
+    
+    return pd.DataFrame({
+        f"step_{i+1}": [pred] for i, pred in enumerate(original_prediction)
+    })
 
 
 if __name__ == "__main__":

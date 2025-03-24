@@ -9,7 +9,7 @@ from lightning.pytorch.callbacks import (
     EarlyStopping,
     LearningRateMonitor,
 )
-from pytorch_forecasting import MAE, TimeSeriesDataSet, TemporalFusionTransformer
+from pytorch_forecasting import MAE, RMSE, TimeSeriesDataSet, TemporalFusionTransformer
 from pytorch_forecasting.models.temporal_fusion_transformer.tuning import (
     optimize_hyperparameters,
 )
@@ -23,13 +23,15 @@ def train_tft(
     model_path,
     max_encoder_length=48,
     max_prediction_length=12,
-    batch_size=64,
-    max_epochs=10,
+    batch_size=128,  # Increased batch size for faster training
+    max_epochs=50,   # Increased epochs with early stopping
     val_split=0.1,
-    learning_rate=1e-3,
-    hidden_size=32,
-    attention_head_size=4,
+    learning_rate=3e-3,  # Slightly increased learning rate
+    hidden_size=16,      # Reduced complexity
+    attention_head_size=2,  # Reduced number of attention heads
     dropout=0.1,
+    hidden_continuous_size=8,  # Added explicit continuous size
+    gradient_clip_val=0.1
 ):
     """
     Train a TFT model on time series data to forecast future steps.
@@ -53,13 +55,13 @@ def train_tft(
 
     # 3) Split into training and validation sets
     max_time_idx = df["time_idx"].max()
-    training_cutoff = int(max_time_idx * (1 - val_split))  # dynamic split
+    training_cutoff = int(max_time_idx * (1 - val_split))
     train_df = df[df["time_idx"] <= training_cutoff]
     val_df = df[df["time_idx"] > training_cutoff]
 
     print(f"Training data: {len(train_df)}, Validation data: {len(val_df)}")
 
-    # 4) Build training and validation datasets
+    # 4) Build training and validation datasets with optimized settings
     training = TimeSeriesDataSet(
         train_df,
         time_idx="time_idx",
@@ -68,74 +70,86 @@ def train_tft(
         max_encoder_length=max_encoder_length,
         max_prediction_length=max_prediction_length,
         time_varying_unknown_reals=unknown_reals,
-        target_normalizer=None,
+        target_normalizer=None,  # We handle normalization externally
         add_relative_time_idx=True,
+        add_target_scales=True,
+        add_encoder_length=True,
+        allow_missing_timesteps=True,  # More robust to missing data
     )
 
     validation = TimeSeriesDataSet.from_dataset(
         training, val_df, stop_randomization=True
     )
 
-    # 5) Create dataloaders
+    # 5) Create dataloaders with optimized settings
     train_dataloader = training.to_dataloader(
-        train=True, batch_size=batch_size, num_workers=8, persistent_workers=True
+        train=True,
+        batch_size=batch_size,
+        num_workers=0,  # Reduced for more stable training
+        persistent_workers=False,
     )
     val_dataloader = validation.to_dataloader(
-        train=False, batch_size=batch_size, num_workers=8, persistent_workers=True
+        train=False,
+        batch_size=batch_size * 2,  # Larger batch size for validation
+        num_workers=0,
+        persistent_workers=False,
     )
 
-    # 6) Configure network and trainer
+    # 6) Configure network and trainer with optimized settings
     pl.seed_everything(42)
+    
     early_stop_callback = EarlyStopping(
-        monitor="val_loss", min_delta=1e-4, patience=10, verbose=False, mode="min"
+        monitor="val_loss",
+        min_delta=1e-4,
+        patience=5,  # Reduced patience for faster training
+        verbose=False,
+        mode="min"
     )
-    lr_logger = LearningRateMonitor()  # log the learning rate
+    
+    lr_logger = LearningRateMonitor()
 
     checkpoint_callback = ModelCheckpoint(
-        dirpath=config.model_dir,  # set your desired directory
-        filename=f"tft_{config.symbol}",  # optional: customize filename format
-        monitor="val_loss",  # optional: metric to monitor
-        mode="min",  # optional: "min" or "max" based on the metric
-        save_top_k=1,  # optional: how many best models to keep
-        save_last=True,  # save latest checkpoint
+        dirpath=config.model_dir,
+        filename=f"tft_{config.symbol}",
+        monitor="val_loss",
+        mode="min",
+        save_top_k=1,
+        save_last=True,
     )
 
     trainer = pl.Trainer(
-        accelerator=(
-            "gpu" if torch.cuda.is_available() else "cpu"
-        ),  # Automatically selects GPU or CPU
-        max_epochs=max_epochs,  # Your desired maximum epochs
-        gradient_clip_val=0.1,  # Gradient clipping
-        logger=True,  # Set True to use the default logger
-        enable_checkpointing=True,  # Enable checkpointing
+        accelerator="gpu" if torch.cuda.is_available() else "cpu",
+        max_epochs=max_epochs,
+        gradient_clip_val=gradient_clip_val,
+        logger=True,
+        enable_checkpointing=True,
         callbacks=[lr_logger, early_stop_callback, checkpoint_callback],
+        deterministic=True,  # Added for reproducibility
+        precision=16 if torch.cuda.is_available() else 32,  # Use mixed precision if GPU available
     )
-    print("Starting training...")
 
-    # 7) Define TFT model
-    print("Initializing Temporal Fusion Transformer...")
+    # 7) Define TFT model with optimized architecture
     tft = TemporalFusionTransformer.from_dataset(
         training,
         learning_rate=learning_rate,
         hidden_size=hidden_size,
         attention_head_size=attention_head_size,
         dropout=dropout,
+        hidden_continuous_size=hidden_continuous_size,
         loss=pytorch_forecasting.metrics.MAE(),
-        log_interval=10,
-        reduce_on_plateau_patience=4,
+        reduce_on_plateau_patience=3,
+        logging_metrics=torch.nn.ModuleList([MAE(), RMSE()]),  # Track both metrics
     )
 
     print(f"Number of parameters in the model: {tft.size()/1e3:.1f}k")
 
-    # 8) Fit model network
+    # 8) Fit model
     trainer.fit(
         tft,
         train_dataloaders=train_dataloader,
         val_dataloaders=val_dataloader,
-        ckpt_path="last",
     )
-    print(f"Training complete. Model saved to {model_path}")
-
+    
     return trainer, tft, train_dataloader, val_dataloader
 
 
@@ -192,8 +206,8 @@ if __name__ == "__main__":
         model_path=config.model_file,
         max_encoder_length=48,
         max_prediction_length=12,
-        batch_size=64,
-        max_epochs=10,
+        batch_size=128,
+        max_epochs=50,
         val_split=0.1,
     )
 
